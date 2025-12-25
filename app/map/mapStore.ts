@@ -129,9 +129,11 @@ export const useMapStore = create<MapState>((set, get) => ({
         return isValid;
       });
       
-      // Merge Supabase data with local properties
+      // Merge Supabase data with local properties, avoiding duplicates
       const localPlaces = get().places;
-      const mergedPlaces = [...localPlaces, ...validSupabasePlaces];
+      const localIds = new Set(localPlaces.map(p => p.id));
+      const uniqueSupabasePlaces = validSupabasePlaces.filter((p: any) => !localIds.has(p.id));
+      const mergedPlaces = [...localPlaces, ...uniqueSupabasePlaces];
       set({ places: mergedPlaces, isLoading: false });
     } catch (error) {
       console.error('Error fetching places from Supabase:', error);
