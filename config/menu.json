@@ -1,0 +1,22 @@
+{
+  "menuItems": [
+    {
+      "name": "home",
+      "title": "Hem",
+      "href": "/(tabs)/home",
+      "icon": "home"
+    },
+    {
+      "name": "map",
+      "title": "Karta",
+      "href": "/(tabs)/map",
+      "icon": "map"
+    },
+    {
+      "name": "bolan",
+      "title": "Bolån",
+      "href": "/(tabs)/bolan",
+      "icon": "calculator"
+    }
+  ]
+}

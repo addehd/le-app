@@ -24,6 +24,7 @@
     "expo-location": "~19.0.8",
     "expo-router": "~6.0.21",
     "expo-status-bar": "~3.0.9",
+    "lucide-react-native": "^0.562.0",
     "maplibre-gl": "^5.15.0",
     "nativewind": "4.1.21",
     "react": "19.1.0",

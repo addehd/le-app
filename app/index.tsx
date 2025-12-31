@@ -1,6 +1,6 @@
+import { Link, Redirect } from 'expo-router';
 import { Platform, View, Text, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link } from 'expo-router';
 
 export default function HomeScreen() {
   if (Platform.OS === 'web') {
