@@ -45,17 +45,17 @@ interface ComparisonState {
   disableAutoSave: () => void;
 }
 
-// LocalStorage helpers
+// LocalStorage helpers - check both window AND localStorage (React Native has window but no localStorage)
 const STORAGE_KEY = 'comparison-state';
 const saveToLocalStorage = (state: Partial<ComparisonState>) => {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 };
 
 const loadFromLocalStorage = (): Partial<ComparisonState> | null => {
-  if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem(STORAGE_KEY);
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    const saved = window.localStorage.getItem(STORAGE_KEY);
     return saved ? JSON.parse(saved) : null;
   }
   return null;
@@ -268,7 +268,7 @@ export const useComparisonStore = create<ComparisonState>((set, get) => {
     saveSession: async (name?: string) => {
       const { selectedPropertyIds, currentSession } = get();
       const user =
-        typeof window !== 'undefined' ? localStorage.getItem('user-email') || 'anon' : 'anon';
+        typeof window !== 'undefined' && typeof window.localStorage !== 'undefined' ? window.localStorage.getItem('user-email') || 'anon' : 'anon';
 
       const sessionData: ComparisonSession = {
         id: currentSession?.id || Date.now().toString(),

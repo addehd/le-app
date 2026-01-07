@@ -17,30 +17,44 @@ interface SharedLink {
   sharedAt: string;
 }
 
-// Simple localStorage helpers
+// Simple localStorage helpers - check both window AND localStorage (React Native has window but no localStorage)
+const hasLocalStorage = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+
 export const storage = {
   // User auth data
   saveUser: (userData: UserData) => {
-    localStorage.setItem('user', JSON.stringify(userData));
+    if (hasLocalStorage) {
+      window.localStorage.setItem('user', JSON.stringify(userData));
+    }
   },
   
   getUser: (): UserData | null => {
-    const user = localStorage.getItem('user');
-    return user ? JSON.parse(user) : null;
+    if (hasLocalStorage) {
+      const user = window.localStorage.getItem('user');
+      return user ? JSON.parse(user) : null;
+    }
+    return null;
   },
   
   clearUser: () => {
-    localStorage.removeItem('user');
+    if (hasLocalStorage) {
+      window.localStorage.removeItem('user');
+    }
   },
   
   // Shared links data
   saveLinks: (links: SharedLink[]) => {
-    localStorage.setItem('shared-links', JSON.stringify(links));
+    if (hasLocalStorage) {
+      window.localStorage.setItem('shared-links', JSON.stringify(links));
+    }
   },
   
   getLinks: (): SharedLink[] => {
-    const links = localStorage.getItem('shared-links');
-    return links ? JSON.parse(links) : [];
+    if (hasLocalStorage) {
+      const links = window.localStorage.getItem('shared-links');
+      return links ? JSON.parse(links) : [];
+    }
+    return [];
   },
   
   addLink: (link: SharedLink) => {

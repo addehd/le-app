@@ -48,40 +48,40 @@ interface AppState {
   loadLinks: () => Promise<void>;
 }
 
-// localStorage helpers for caching
+// localStorage helpers for caching - check both window AND localStorage (React Native has window but no localStorage)
 const cache = {
   saveProfile: (profile: UserProfile) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('cached-profile', JSON.stringify(profile));
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      window.localStorage.setItem('cached-profile', JSON.stringify(profile));
     }
   },
   
   getProfile: (): UserProfile | null => {
-    if (typeof window !== 'undefined') {
-      const cached = localStorage.getItem('cached-profile');
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      const cached = window.localStorage.getItem('cached-profile');
       return cached ? JSON.parse(cached) : null;
     }
     return null;
   },
   
   saveLinks: (links: SharedLink[]) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('cached-links', JSON.stringify(links));
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      window.localStorage.setItem('cached-links', JSON.stringify(links));
     }
   },
   
   getLinks: (): SharedLink[] => {
-    if (typeof window !== 'undefined') {
-      const cached = localStorage.getItem('cached-links');
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      const cached = window.localStorage.getItem('cached-links');
       return cached ? JSON.parse(cached) : [];
     }
     return [];
   },
   
   clear: () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('cached-profile');
-      localStorage.removeItem('cached-links');
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      window.localStorage.removeItem('cached-profile');
+      window.localStorage.removeItem('cached-links');
     }
   }
 };

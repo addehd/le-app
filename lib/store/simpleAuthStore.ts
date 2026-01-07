@@ -24,16 +24,16 @@ interface AuthState {
   removeFriend: (friendId: string) => Promise<void>;
 }
 
-// Simple localStorage helpers
+// Simple localStorage helpers - check both window AND localStorage (React Native has window but no localStorage)
 const saveToLocalStorage = (key: string, data: any) => {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(key, JSON.stringify(data));
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    window.localStorage.setItem(key, JSON.stringify(data));
   }
 };
 
 const getFromLocalStorage = (key: string) => {
-  if (typeof window !== 'undefined') {
-    const item = localStorage.getItem(key);
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    const item = window.localStorage.getItem(key);
     return item ? JSON.parse(item) : null;
   }
   return null;

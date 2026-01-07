@@ -41,16 +41,16 @@ interface PropertyLinkState {
   loadFromDatabase: () => Promise<void>;
 }
 
-// Simple localStorage helpers
+// Simple localStorage helpers - check both window AND localStorage exist (React Native has window but no localStorage)
 const savePropertyLinks = (links: PropertyLink[]) => {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('property-links', JSON.stringify(links));
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    window.localStorage.setItem('property-links', JSON.stringify(links));
   }
 };
 
 const loadPropertyLinks = (): PropertyLink[] => {
-  if (typeof window !== 'undefined') {
-    const item = localStorage.getItem('property-links');
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    const item = window.localStorage.getItem('property-links');
     return item ? JSON.parse(item) : [];
   }
   return [];

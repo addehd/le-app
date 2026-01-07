@@ -21,16 +21,16 @@ interface LinkState {
   fetchOGData: (url: string) => Promise<{ title?: string; description?: string; image?: string }>;
 }
 
-// Simple localStorage helpers
+// Simple localStorage helpers - check both window AND localStorage (React Native has window but no localStorage)
 const saveLinks = (links: SharedLink[]) => {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('shared-links', JSON.stringify(links));
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    window.localStorage.setItem('shared-links', JSON.stringify(links));
   }
 };
 
 const loadLinks = (): SharedLink[] => {
-  if (typeof window !== 'undefined') {
-    const item = localStorage.getItem('shared-links');
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    const item = window.localStorage.getItem('shared-links');
     return item ? JSON.parse(item) : [];
   }
   return [];
