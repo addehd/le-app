@@ -35,6 +35,7 @@ interface PropertyLinkState {
   isLoading: boolean;
   error: string | null;
   addPropertyLink: (url: string, sharedBy: string, latitude?: number, longitude?: number) => Promise<PropertyLink>;
+  savePropertyLink: (link: Omit<PropertyLink, 'id' | 'sharedAt'> & { id?: string; sharedAt?: string }) => Promise<PropertyLink>;
   removePropertyLink: (linkId: string) => Promise<void>;
   fetchPropertyData: (url: string) => Promise<{ title?: string; description?: string; image?: string; propertyData?: PropertyLinkData }>;
   loadFromDatabase: () => Promise<void>;
@@ -276,6 +277,52 @@ export const usePropertyLinkStore = create<PropertyLinkState>((set, get) => ({
       set({ error: error.message, isLoading: false });
       throw error;
     }
+  },
+
+  savePropertyLink: async (linkData) => {
+    const newLink: PropertyLink = {
+      id: linkData.id || Date.now().toString(),
+      url: linkData.url,
+      title: linkData.title,
+      description: linkData.description,
+      image: linkData.image,
+      sharedBy: linkData.sharedBy,
+      sharedAt: linkData.sharedAt || new Date().toISOString(),
+      latitude: linkData.latitude,
+      longitude: linkData.longitude,
+      propertyData: linkData.propertyData,
+    };
+
+    // 1. Optimistic update - Update UI immediately (localStorage)
+    const updatedLinks = [newLink, ...get().propertyLinks];
+    set({ propertyLinks: updatedLinks });
+    savePropertyLinks(updatedLinks);
+
+    // 2. Save to database (Supabase) - async, don't block UI
+    try {
+      const { error: dbError } = await supabase
+        .from('property_links')
+        .insert({
+          id: newLink.id,
+          url: newLink.url,
+          title: newLink.title,
+          description: newLink.description,
+          image: newLink.image,
+          shared_by: newLink.sharedBy,
+          shared_at: newLink.sharedAt,
+          latitude: newLink.latitude,
+          longitude: newLink.longitude,
+          property_data: newLink.propertyData,
+        });
+
+      if (dbError) {
+        console.error('Failed to save to database:', dbError);
+      }
+    } catch (dbError) {
+      console.error('Database error:', dbError);
+    }
+
+    return newLink;
   },
 
   removePropertyLink: async (linkId: string) => {

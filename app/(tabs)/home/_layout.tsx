@@ -7,6 +7,7 @@ export default function HomeLayout() {
         headerShown: false,
       }}>
       <Stack.Screen name="index" />
+      <Stack.Screen name="properties/index" />
       <Stack.Screen name="kanban/index" />
       <Stack.Screen name="kanban/[projectId]" />
       <Stack.Screen name="profile/index" />

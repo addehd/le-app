@@ -46,6 +46,77 @@ We use **Zustand** for state management with **AsyncStorage** for persistence:
 4. **Performant**: Local-first with optimistic updates
 5. **Type-Safe**: Full TypeScript support throughout
 
+## 🌐 Feature-Based API Pattern
+
+Each feature owns its API calls, keeping network logic co-located with the feature that uses it.
+
+### Structure
+
+```
+app/(tabs)/home/properties/
+├── index.tsx     # Screen component
+├── api.ts        # Feature-specific API calls
+```
+
+### API File Pattern (`properties/api.ts`)
+
+```typescript
+const CRAWLER_BASE_URL = process.env.EXPO_PUBLIC_CRAWLER_API_URL || '';
+
+export interface OGData {
+  title?: string;
+  description?: string;
+  image?: string;
+  price?: number;
+  // ... feature-specific fields
+}
+
+export async function fetchOGData(url: string): Promise<OGData> {
+  const response = await fetch(
+    `${CRAWLER_BASE_URL}/crawler-og?url=${encodeURIComponent(url)}`
+  );
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+```
+
+### Screen Usage
+
+```typescript
+import { fetchOGData } from './api';
+import { usePropertyLinkStore } from '../../../../lib/store/propertyLinkStore';
+
+const handleAdd = async () => {
+  // 1. Fetch data using feature-local API
+  const ogData = await fetchOGData(url);
+  
+  // 2. Save to global store for persistence
+  await savePropertyLink({
+    url,
+    title: ogData.title,
+    // ...
+  });
+};
+```
+
+### Why Feature-Based API?
+
+- **Co-location**: API logic lives with the feature that uses it
+- **Isolation**: Changes to one feature's API don't affect others
+- **Discoverability**: Easy to find all code related to a feature
+- **Testing**: Feature APIs can be mocked/tested independently
+
+### Environment Variables
+
+API base URLs come from environment variables:
+
+```env
+EXPO_PUBLIC_CRAWLER_API_URL=https://api.example.com/go
+EXPO_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+```
+
+---
+
 ## 🎯 Kanban Feature Example
 
 ### Store Structure (`kanban/store/kanbanStore.ts`)
