@@ -280,8 +280,12 @@ export const useComparisonStore = create<ComparisonState>((set, get) => {
         updatedAt: new Date().toISOString(),
       };
 
+      // Always save to localStorage first (works offline)
+      set({ currentSession: sessionData });
+      saveToLocalStorage({ currentSession: sessionData });
+
       try {
-        // Save to Supabase
+        // Try to save to Supabase (may fail if table doesn't exist)
         const { error } = await supabase.from('comparison_sessions').upsert({
           id: sessionData.id,
           name: sessionData.name,
@@ -292,13 +296,13 @@ export const useComparisonStore = create<ComparisonState>((set, get) => {
           updated_at: sessionData.updatedAt,
         });
 
-        if (error) throw error;
-
-        set({ currentSession: sessionData });
-        saveToLocalStorage({ currentSession: sessionData });
+        if (error) {
+          // Log but don't throw - localStorage fallback is working
+          console.warn('Supabase save failed (table may not exist):', error.message || error);
+        }
       } catch (error: any) {
-        console.error('Failed to save comparison session:', error);
-        set({ error: error.message });
+        // Silently fail - localStorage is the primary storage
+        console.warn('Supabase save failed:', error?.message || 'Unknown error');
       }
     },
 

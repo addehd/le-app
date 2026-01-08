@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Platform } from 'react-native';
-import { Map, Calculator, Home, LucideIcon } from 'lucide-react-native';
+import { Map, Calculator, Home, Scale, User, LucideIcon } from 'lucide-react-native';
 import menuConfig from '../../config/menu.json';
 
 // Map icon names to Lucide components
@@ -8,6 +8,8 @@ const iconComponents: Record<string, LucideIcon> = {
   map: Map,
   calculator: Calculator,
   home: Home,
+  scale: Scale,
+  user: User,
 };
 
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {

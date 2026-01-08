@@ -34,7 +34,7 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (!user) {
-      router.push('/auth');
+      router.replace('/auth');
     }
   }, [user]);
 
@@ -92,7 +92,7 @@ export default function ProfileScreen() {
   const handleSignOut = async () => {
     try {
       await signOut();
-      router.push('/auth');
+      router.replace('/auth');
     } catch (error) {
       Alert.alert('Error', 'Failed to sign out');
     }

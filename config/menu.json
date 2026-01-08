@@ -17,6 +17,18 @@
       "title": "Bolån",
       "href": "/(tabs)/bolan",
       "icon": "calculator"
+    },
+    {
+      "name": "compare",
+      "title": "Jämför",
+      "href": "/(tabs)/compare",
+      "icon": "scale"
+    },
+    {
+      "name": "profile",
+      "title": "Profil",
+      "href": "/(tabs)/profile",
+      "icon": "user"
     }
   ]
 }

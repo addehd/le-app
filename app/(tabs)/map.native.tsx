@@ -1,9 +1,17 @@
 import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, ActivityIndicator } from 'react-native';
 import { useState, useEffect } from 'react';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useAuthStore } from '../../lib/store/simpleAuthStore';
 import { usePropertyLinkStore } from '../../lib/store/propertyLinkStore';
 
-// Fallback map component (used when platform-specific file not available)
+// Valle Sagrado, Peru coordinates (Cusco region)
+const INITIAL_REGION = {
+  longitude: -71.9589,
+  latitude: -13.3048,
+  latitudeDelta: 0.5,
+  longitudeDelta: 0.5,
+};
+
 export default function MapTab() {
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [url, setUrl] = useState('');
@@ -38,13 +46,24 @@ export default function MapTab() {
 
   return (
     <View style={styles.container}>
-      {/* Map placeholder */}
-      <View style={styles.mapPlaceholder}>
-        <Text style={styles.mapPlaceholderText}>Map View</Text>
-        <Text style={styles.mapPlaceholderSubtext}>
-          {propertyLinks.length} properties
-        </Text>
-      </View>
+      <MapView
+        style={styles.map}
+        initialRegion={INITIAL_REGION}
+        provider={PROVIDER_GOOGLE}
+      >
+        {propertyLinks.map((link) => (
+          <Marker
+            key={link.id}
+            coordinate={{
+              latitude: link.latitude,
+              longitude: link.longitude,
+            }}
+            title={link.title || 'Property'}
+            description={link.url}
+            pinColor="#3b82f6"
+          />
+        ))}
+      </MapView>
 
       {/* Add Property Button */}
       <Pressable
@@ -145,21 +164,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f3f4f6',
   },
-  mapPlaceholder: {
+  map: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#e5e7eb',
-  },
-  mapPlaceholderText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#6b7280',
-  },
-  mapPlaceholderSubtext: {
-    fontSize: 14,
-    color: '#9ca3af',
-    marginTop: 8,
   },
   addButton: {
     position: 'absolute',
