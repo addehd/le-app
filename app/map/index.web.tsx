@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Map, { Marker } from 'react-map-gl/maplibre';
 import { useAuthStore } from '../../lib/store/authStore';
 import { usePropertyLinkStore } from '../../lib/store/propertyLinkStore';
+import { hasValidCoordinates } from '../../lib/utils/coordinates';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 // Valle Sagrado, Peru coordinates (Cusco region)
@@ -48,6 +49,9 @@ export default function MapScreen() {
   const isLoading = isPropertyLoading;
   const currentLinks = propertyLinks;
 
+  // Filter links with valid coordinates to prevent type errors
+  const validPropertyLinks = propertyLinks.filter(hasValidCoordinates) as Array<typeof propertyLinks[0] & { latitude: number; longitude: number }>;
+
   return (
     <div style={{ width: '100%', height: '100vh', margin: 0, padding: 0, overflow: 'hidden', position: 'relative' }}>
       {/* MapLibre Map */}
@@ -57,7 +61,7 @@ export default function MapScreen() {
         mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
       >
         {/* Markers for property links (blue) */}
-        {propertyLinks.map((link) => (
+        {validPropertyLinks.map((link) => (
           <Marker
             key={`property-${link.id}`}
             longitude={link.longitude}
