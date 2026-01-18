@@ -141,7 +141,7 @@ export class KanbanStore {
   ): Card {
     const now = Date.now();
     return {
-      id: `card-${now}-${Math.random().toString(36).substr(2, 9)}`,
+      id: crypto.randomUUID(),
       title,
       description,
       tags,

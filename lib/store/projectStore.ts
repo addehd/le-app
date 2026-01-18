@@ -64,7 +64,7 @@ export class ProjectStore {
     const color = colors[projects.length % colors.length];
     
     const newProject: Project = {
-      id: `project-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: crypto.randomUUID(),
       title,
       description,
       rootDir,

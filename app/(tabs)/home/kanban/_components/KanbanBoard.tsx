@@ -501,7 +501,7 @@ export const KanbanBoard = ({ projectId }: KanbanBoardProps) => {
           // Paste card below
           if (copiedCard && columns[selectedColumnIndex]) {
             const col = columns[selectedColumnIndex];
-            const newCard = { ...copiedCard, id: Math.random().toString(36).substr(2, 9) };
+            const newCard = { ...copiedCard, id: crypto.randomUUID() };
             setColumns(prevColumns =>
               prevColumns.map(c =>
                 c.id === col.id
