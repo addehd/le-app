@@ -10,4 +10,3 @@ describe('Test Infrastructure', () => {
     expect(sum).toBe(4);
   });
 });
-# Test Infrastructure Complete

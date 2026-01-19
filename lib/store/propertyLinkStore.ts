@@ -1,20 +1,48 @@
 import { create } from 'zustand';
 import { supabase } from '../api/supabaseClient';
+import { goApiClient, PROPERTY_KEYWORDS } from '../api/goApiClient';
+
+export type EnrichmentStatus = 'og_only' | 'llm_processing' | 'llm_complete' | 'llm_failed';
 
 export interface PropertyLinkData {
+  // Core Info (Stage 1: OG metadata)
   price?: number;
   currency?: string;
-  bedrooms?: number;
-  bathrooms?: number;
-  area?: number;
-  areaUnit?: string;
-  propertyType?: string;
   address?: string;
   city?: string;
+  postalCode?: string;
+  country?: string;
+  
+  // Property Details (Stage 2: LLM enrichment)
+  bedrooms?: number;
+  bathrooms?: number;
+  area?: number;          // sqm
+  areaUnit?: string;
+  rooms?: number;         // total rooms
+  floor?: string | number;
+  buildYear?: number;
+  propertyType?: string;  // apartment, house, villa, etc.
+  
+  // Financial (LLM)
+  monthlyFee?: number;    // avgift
+  operatingCost?: number; // driftskostnad
+  
+  // Features (LLM)
+  elevator?: string | boolean;
+  balcony?: string | boolean;
+  parking?: string | boolean;
+  features?: string[];    // array of feature strings
+  
+  // Legacy field
   energyClass?: string;
-  builtYear?: number;
-  floor?: string;
-  monthlyFee?: number;
+  
+  // Metadata
+  source?: string;        // hemnet, blocket, etc.
+  publishedDate?: string;
+  
+  // Enrichment tracking
+  enrichmentStatus?: EnrichmentStatus;
+  lastEnriched?: string;  // ISO timestamp
 }
 
 export interface PropertyLink {
@@ -22,7 +50,8 @@ export interface PropertyLink {
   url: string;
   title?: string;
   description?: string;
-  image?: string;
+  image?: string;         // Primary image (for backward compatibility)
+  images?: string[];      // All images from property listing
   sharedBy: string;
   sharedAt: string;
   latitude?: number;
@@ -37,8 +66,10 @@ interface PropertyLinkState {
   addPropertyLink: (url: string, sharedBy: string, latitude?: number, longitude?: number) => Promise<PropertyLink>;
   savePropertyLink: (link: Omit<PropertyLink, 'id' | 'sharedAt'> & { id?: string; sharedAt?: string }) => Promise<PropertyLink>;
   removePropertyLink: (linkId: string) => Promise<void>;
-  fetchPropertyData: (url: string) => Promise<{ title?: string; description?: string; image?: string; propertyData?: PropertyLinkData }>;
+  fetchPropertyData: (url: string) => Promise<{ title?: string; description?: string; image?: string; images?: string[]; propertyData?: PropertyLinkData }>;
   loadFromDatabase: () => Promise<void>;
+  subscribeToEnrichmentUpdates: () => () => void;
+  updatePropertyFromRealtime: (updatedProperty: any) => void;
 }
 
 // Simple localStorage helpers - check both window AND localStorage exist (React Native has window but no localStorage)
@@ -61,6 +92,11 @@ export const usePropertyLinkStore = create<PropertyLinkState>((set, get) => ({
   isLoading: false,
   error: null,
 
+  /**
+   * Two-stage property data extraction:
+   * Stage 1: Fast OG metadata extraction (immediate)
+   * Stage 2: LLM enrichment (async, triggered automatically)
+   */
   fetchPropertyData: async (url: string) => {
     try {
       // Validate URL
@@ -71,135 +107,78 @@ export const usePropertyLinkStore = create<PropertyLinkState>((set, get) => ({
         throw new Error('Invalid URL format');
       }
 
-      let html: string;
-
-      // Try to fetch the URL using CORS proxy
-      try {
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-        const response = await fetch(proxyUrl, {
-          headers: {
-            'Accept': 'text/html,application/xhtml+xml',
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        html = await response.text();
-      } catch (error) {
-        console.error('Failed to fetch URL:', error);
+      // Check if Go API is configured
+      if (!goApiClient.isConfigured()) {
+        console.warn('⚠️ Go API not configured, using fallback');
         return {
           title: urlObj.hostname.replace('www.', ''),
           description: `Property from ${urlObj.hostname.replace('www.', '')}`,
-          image: ''
+          image: '',
+          propertyData: {
+            enrichmentStatus: 'og_only' as const,
+          }
         };
       }
 
-      // Parse HTML to extract OG tags and property data
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
+      // STAGE 1: Extract OG metadata (fast, synchronous)
+      console.log('📥 Stage 1: Extracting OG metadata for', url);
+      const ogResponse = await goApiClient.extractOGMetadata(url);
 
-      // Helper to get meta tag content
-      const getMetaContent = (property: string, name?: string): string => {
-        let element = doc.querySelector(`meta[property="${property}"]`);
-        if (element) {
-          return element.getAttribute('content') || '';
-        }
-
-        if (name) {
-          element = doc.querySelector(`meta[name="${name}"]`);
-          if (element) {
-            return element.getAttribute('content') || '';
+      if (ogResponse.error) {
+        console.error('OG extraction error:', ogResponse.error);
+        return {
+          title: urlObj.hostname.replace('www.', ''),
+          description: `Property from ${urlObj.hostname.replace('www.', '')}`,
+          image: '',
+          propertyData: {
+            enrichmentStatus: 'llm_failed' as const,
           }
-        }
+        };
+      }
 
-        return '';
+      // Convert OG response to PropertyLinkData format
+      const propertyData: PropertyLinkData = {
+        // OG metadata
+        price: ogResponse.price,
+        currency: ogResponse.currency || 'SEK',
+        address: ogResponse.address,
+        city: ogResponse.city,
+        area: ogResponse.area,
+        bedrooms: ogResponse.bedrooms,
+        
+        // Enrichment tracking
+        enrichmentStatus: 'og_only',
+        lastEnriched: new Date().toISOString(),
       };
 
-      // Extract basic OG metadata
-      const title = getMetaContent('og:title') ||
-                    getMetaContent('', 'twitter:title') ||
-                    doc.querySelector('title')?.textContent?.trim() ||
-                    urlObj.hostname.replace('www.', '');
-
-      const description = getMetaContent('og:description') ||
-                         getMetaContent('', 'twitter:description') ||
-                         getMetaContent('', 'description') ||
-                         '';
-
-      const image = getMetaContent('og:image') ||
-                   getMetaContent('', 'twitter:image') ||
-                   '';
-
-      // Extract property-specific data from structured data (schema.org)
-      const propertyData: PropertyLinkData = {};
-
-      // Look for JSON-LD structured data
-      const scriptTags = doc.querySelectorAll('script[type="application/ld+json"]');
-      for (let i = 0; i < scriptTags.length; i++) {
-        try {
-          const jsonData = JSON.parse(scriptTags[i].textContent || '');
-
-          // Check if it's a property listing
-          if (jsonData['@type'] === 'RealEstateListing' || jsonData['@type'] === 'Apartment' || jsonData['@type'] === 'House') {
-            // Extract price
-            if (jsonData.offers?.price) {
-              propertyData.price = parseFloat(jsonData.offers.price);
-              propertyData.currency = jsonData.offers.priceCurrency || 'SEK';
-            }
-
-            // Extract bedrooms/bathrooms
-            if (jsonData.numberOfRooms) {
-              propertyData.bedrooms = parseInt(jsonData.numberOfRooms);
-            }
-            if (jsonData.numberOfBedrooms) {
-              propertyData.bedrooms = parseInt(jsonData.numberOfBedrooms);
-            }
-            if (jsonData.numberOfBathroomsTotal) {
-              propertyData.bathrooms = parseInt(jsonData.numberOfBathroomsTotal);
-            }
-
-            // Extract area
-            if (jsonData.floorSize?.value) {
-              propertyData.area = parseFloat(jsonData.floorSize.value);
-              propertyData.areaUnit = jsonData.floorSize.unitText || 'm²';
-            }
-
-            // Extract address
-            if (jsonData.address) {
-              if (typeof jsonData.address === 'string') {
-                propertyData.address = jsonData.address;
-              } else {
-                propertyData.address = jsonData.address.streetAddress;
-                propertyData.city = jsonData.address.addressLocality;
-              }
-            }
-          }
-        } catch (e) {
-          // Skip invalid JSON
-        }
+      // Extract all images from OG data
+      const images: string[] = [];
+      if (ogResponse.image) {
+        images.push(ogResponse.image);
+      }
+      if (ogResponse.og?.image) {
+        images.push(...ogResponse.og.image.filter(img => img && !images.includes(img)));
       }
 
-      // Also try to extract from common meta tags used by property sites
-      const priceFromMeta = getMetaContent('property:price:amount') || getMetaContent('product:price:amount');
-      if (priceFromMeta && !propertyData.price) {
-        propertyData.price = parseFloat(priceFromMeta);
-      }
+      console.log('✅ Stage 1 complete:', { 
+        title: ogResponse.title, 
+        hasPrice: !!ogResponse.price,
+        imageCount: images.length 
+      });
 
-      const currencyFromMeta = getMetaContent('property:price:currency') || getMetaContent('product:price:currency');
-      if (currencyFromMeta && !propertyData.currency) {
-        propertyData.currency = currencyFromMeta;
-      }
-
-      console.log('Fetched property data for', url, { title, description, image, propertyData });
+      // STAGE 2: Trigger async LLM enrichment (fire-and-forget)
+      // The Go API (/go/crawler-og) already triggers /go/auto-crawl asynchronously
+      // The enriched data will be saved to property_links via Realtime updates
+      console.log('🚀 Stage 2: LLM enrichment triggered (async)');
 
       return {
-        title: title.trim(),
-        description: description.trim(),
-        image: image.trim(),
+        title: ogResponse.title || urlObj.hostname.replace('www.', ''),
+        description: ogResponse.description || '',
+        image: ogResponse.image || '',
+        images: images.length > 0 ? images : undefined,
         propertyData: Object.keys(propertyData).length > 0 ? propertyData : undefined
       };
+
     } catch (error) {
       console.error('Error fetching property data:', error);
       try {
@@ -207,13 +186,19 @@ export const usePropertyLinkStore = create<PropertyLinkState>((set, get) => ({
         return {
           title: urlObj.hostname.replace('www.', ''),
           description: '',
-          image: ''
+          image: '',
+          propertyData: {
+            enrichmentStatus: 'llm_failed' as const,
+          }
         };
       } catch {
         return {
           title: 'Property Link',
           description: '',
-          image: ''
+          image: '',
+          propertyData: {
+            enrichmentStatus: 'llm_failed' as const,
+          }
         };
       }
     }
@@ -231,6 +216,7 @@ export const usePropertyLinkStore = create<PropertyLinkState>((set, get) => ({
         title: propertyInfo.title,
         description: propertyInfo.description,
         image: propertyInfo.image,
+        images: propertyInfo.images,
         sharedBy,
         sharedAt: new Date().toISOString(),
         latitude,
@@ -381,6 +367,84 @@ export const usePropertyLinkStore = create<PropertyLinkState>((set, get) => ({
       }
     } catch (error) {
       console.error('Error loading from database:', error);
+    }
+  },
+
+  /**
+   * Subscribe to Realtime updates for property enrichment
+   * Returns unsubscribe function
+   */
+  subscribeToEnrichmentUpdates: () => {
+    console.log('🔔 Subscribing to property enrichment updates...');
+    
+    const channel = supabase
+      .channel('property_enrichment')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'property_links',
+        },
+        (payload) => {
+          console.log('📨 Received property update:', payload);
+          get().updatePropertyFromRealtime(payload.new);
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Realtime subscription status:', status);
+      });
+
+    // Return unsubscribe function
+    return () => {
+      console.log('🔕 Unsubscribing from property enrichment updates');
+      supabase.removeChannel(channel);
+    };
+  },
+
+  /**
+   * Handle incoming Realtime property updates (LLM enrichment)
+   */
+  updatePropertyFromRealtime: (updatedProperty: any) => {
+    const currentLinks = get().propertyLinks;
+    
+    // Find the property to update
+    const index = currentLinks.findIndex(link => link.id === updatedProperty.id);
+    
+    if (index === -1) {
+      console.log('⚠️ Received update for unknown property:', updatedProperty.id);
+      return;
+    }
+
+    console.log('✨ Updating property with enriched data:', updatedProperty.id);
+
+    // Convert from snake_case (database) to camelCase (app)
+    const enrichedLink: PropertyLink = {
+      ...currentLinks[index],
+      title: updatedProperty.title || currentLinks[index].title,
+      description: updatedProperty.description || currentLinks[index].description,
+      image: updatedProperty.image || currentLinks[index].image,
+      latitude: updatedProperty.latitude ?? currentLinks[index].latitude,
+      longitude: updatedProperty.longitude ?? currentLinks[index].longitude,
+      propertyData: updatedProperty.property_data 
+        ? { ...currentLinks[index].propertyData, ...updatedProperty.property_data }
+        : currentLinks[index].propertyData,
+    };
+
+    // Update the property in the list
+    const updatedLinks = [
+      ...currentLinks.slice(0, index),
+      enrichedLink,
+      ...currentLinks.slice(index + 1),
+    ];
+
+    // Update state and localStorage
+    set({ propertyLinks: updatedLinks });
+    savePropertyLinks(updatedLinks);
+
+    // Log enrichment status
+    if (enrichedLink.propertyData?.enrichmentStatus) {
+      console.log(`📊 Property enrichment status: ${enrichedLink.propertyData.enrichmentStatus}`);
     }
   },
 }));

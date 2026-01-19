@@ -9,6 +9,12 @@ export default defineConfig({
     // Enable globals (no need to import describe/test/expect)
     globals: true,
 
+    // Environment variables for tests
+    env: {
+      EXPO_PUBLIC_SUPABASE_URL: 'http://localhost:54321',
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key',
+    },
+
     // Setup files
     setupFiles: ['__tests__/setup/vitest.setup.ts'],
 
