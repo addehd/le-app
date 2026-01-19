@@ -58,6 +58,7 @@
     "eslint-config-expo": "~10.0.0",
     "eslint-config-prettier": "^10.1.2",
     "happy-dom": "^20.3.3",
+    "msw": "^2.12.7",
     "prettier": "^3.2.5",
     "prettier-plugin-tailwindcss": "^0.5.11",
     "tailwindcss": "^3.4.0",
