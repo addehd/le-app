@@ -7,7 +7,15 @@ import { useAuthStore } from '../../../../lib/store/authStore';
 import { fetchOGData } from './api';
 
 function PropertyCard({ property, onRemove }: { property: PropertyLink; onRemove: () => void }) {
+  const router = useRouter();
+
   const handlePress = () => {
+    // Navigate to property detail page
+    router.push(`/home/properties/${property.id}`);
+  };
+
+  const handleOpenListing = (e: any) => {
+    e.stopPropagation();
     Linking.openURL(property.url);
   };
 
