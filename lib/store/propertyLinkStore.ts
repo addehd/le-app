@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 import { supabase } from '../api/supabaseClient';
 import { goApiClient, PROPERTY_KEYWORDS } from '../api/goApiClient';
+import {
+  calculateMortgagePayment,
+  calculateTotalCost,
+  calculateDTI,
+  type MortgageParams,
+  type TotalCostParams,
+  type DTIParams
+} from '../financial/calculations';
 
 export type EnrichmentStatus = 'og_only' | 'llm_processing' | 'llm_complete' | 'llm_failed';
 
@@ -106,6 +114,19 @@ interface PropertyLinkState {
   loadFromDatabase: () => Promise<void>;
   subscribeToEnrichmentUpdates: () => () => void;
   updatePropertyFromRealtime: (updatedProperty: any) => void;
+  updateFinancialData: (
+    linkId: string,
+    financialData: FinancialData
+  ) => Promise<void>;
+  calculateAndSaveFinancials: (
+    linkId: string,
+    inputs: {
+      mortgage?: MortgageParams;
+      totalCost?: TotalCostParams;
+      affordability?: DTIParams;
+    }
+  ) => Promise<FinancialData>;
+  getFinancialResults: (linkId: string) => FinancialData['results'] | null;
 }
 
 // Simple localStorage helpers - check both window AND localStorage exist (React Native has window but no localStorage)
@@ -443,10 +464,10 @@ export const usePropertyLinkStore = create<PropertyLinkState>((set, get) => ({
    */
   updatePropertyFromRealtime: (updatedProperty: any) => {
     const currentLinks = get().propertyLinks;
-    
+
     // Find the property to update
     const index = currentLinks.findIndex(link => link.id === updatedProperty.id);
-    
+
     if (index === -1) {
       console.log('⚠️ Received update for unknown property:', updatedProperty.id);
       return;
@@ -462,7 +483,7 @@ export const usePropertyLinkStore = create<PropertyLinkState>((set, get) => ({
       image: updatedProperty.image || currentLinks[index].image,
       latitude: updatedProperty.latitude ?? currentLinks[index].latitude,
       longitude: updatedProperty.longitude ?? currentLinks[index].longitude,
-      propertyData: updatedProperty.property_data 
+      propertyData: updatedProperty.property_data
         ? { ...currentLinks[index].propertyData, ...updatedProperty.property_data }
         : currentLinks[index].propertyData,
     };
@@ -482,5 +503,75 @@ export const usePropertyLinkStore = create<PropertyLinkState>((set, get) => ({
     if (enrichedLink.propertyData?.enrichmentStatus) {
       console.log(`📊 Property enrichment status: ${enrichedLink.propertyData.enrichmentStatus}`);
     }
+  },
+
+  updateFinancialData: async (linkId, financialData) => {
+    const { propertyLinks } = get();
+    const link = propertyLinks.find(l => l.id === linkId);
+    if (!link) throw new Error('Property link not found');
+
+    // Update in Supabase
+    const { error } = await supabase
+      .from('property_links')
+      .update({ financial_data: financialData })
+      .eq('id', linkId);
+
+    if (error) throw error;
+
+    // Update local state
+    set({
+      propertyLinks: propertyLinks.map(l =>
+        l.id === linkId ? { ...l, financialData } : l
+      )
+    });
+
+    // Persist to localStorage
+    savePropertyLinks(get().propertyLinks);
+  },
+
+  calculateAndSaveFinancials: async (linkId, inputs) => {
+    let results: any = {};
+
+    // Calculate mortgage if inputs provided
+    if (inputs.mortgage) {
+      const mortgageResult = calculateMortgagePayment(inputs.mortgage);
+      results.monthlyPayment = mortgageResult.monthlyPayment;
+    }
+
+    // Calculate total cost if inputs provided
+    if (inputs.totalCost) {
+      const totalCostResult = calculateTotalCost(inputs.totalCost);
+      results.totalMonthly = totalCostResult.totalMonthly;
+    }
+
+    // Calculate DTI if inputs provided
+    if (inputs.affordability) {
+      const dtiResult = calculateDTI(inputs.affordability);
+      results.frontEndDTI = dtiResult.frontEndDTI;
+      results.backEndDTI = dtiResult.backEndDTI;
+      results.canAfford = dtiResult.canAffordIdeal;
+    }
+
+    // Build FinancialData object
+    const financialData: FinancialData = {
+      mortgage: inputs.mortgage,
+      totalCost: inputs.totalCost,
+      affordability: inputs.affordability,
+      results: {
+        ...results,
+        calculatedAt: new Date().toISOString()
+      }
+    };
+
+    // Save via updateFinancialData
+    await get().updateFinancialData(linkId, financialData);
+
+    return financialData;
+  },
+
+  getFinancialResults: (linkId) => {
+    const { propertyLinks } = get();
+    const link = propertyLinks.find(l => l.id === linkId);
+    return link?.financialData?.results || null;
   },
 }));
