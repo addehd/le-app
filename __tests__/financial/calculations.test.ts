@@ -1,302 +1,310 @@
 import { describe, test, expect } from 'vitest';
 import {
+  calculateAmorteringskrav,
   calculateMortgagePayment,
   calculateTotalCost,
-  calculateDTI,
-  type MortgageParams,
-  type TotalCostParams,
-  type DTIParams,
+  calculateAffordability,
+  formatCurrencySEK,
+  formatNumberSE,
+  type SwedishMortgageParams,
+  type SwedishTotalCostParams,
+  type SwedishAffordabilityParams,
 } from '@/lib/financial/calculations';
 
-describe('Financial Calculations', () => {
+describe('Swedish Financial Calculations', () => {
+  describe('calculateAmorteringskrav', () => {
+    test('requires 2% yearly for LTV > 70%', () => {
+      const result = calculateAmorteringskrav({
+        principal: 2550000,  // 3M SEK price, 15% down = 85% LTV
+        purchasePrice: 3000000
+      });
+
+      expect(result.yearlyAmortizationPercent).toBe(2);
+      expect(result.monthlyAmortization).toBeCloseTo(4250, 0);  // 2% of 2.55M / 12
+      expect(result.reason).toContain('85.0%');
+      expect(result.reason).toContain('2% yearly');
+    });
+
+    test('requires 1% yearly for LTV 50-70%', () => {
+      const result = calculateAmorteringskrav({
+        principal: 1800000,  // 3M SEK, 40% down = 60% LTV
+        purchasePrice: 3000000
+      });
+
+      expect(result.yearlyAmortizationPercent).toBe(1);
+      expect(result.monthlyAmortization).toBeCloseTo(1500, 0);  // 1% of 1.8M / 12
+      expect(result.reason).toContain('60.0%');
+    });
+
+    test('no requirement for LTV ≤ 50%', () => {
+      const result = calculateAmorteringskrav({
+        principal: 1200000,  // 3M SEK, 60% down = 40% LTV
+        purchasePrice: 3000000
+      });
+
+      expect(result.yearlyAmortizationPercent).toBe(0);
+      expect(result.monthlyAmortization).toBe(0);
+      expect(result.reason).toContain('no requirement');
+    });
+
+    test('requires additional 1% if debt > 4.5x income', () => {
+      const result = calculateAmorteringskrav({
+        principal: 2250000,  // 75% LTV
+        purchasePrice: 3000000,
+        grossAnnualIncome: 400000,
+        totalDebt: 2000000  // 5x income
+      });
+
+      expect(result.yearlyAmortizationPercent).toBe(3);  // 2% (LTV) + 1% (debt)
+      expect(result.reason).toContain('5.0x income');
+    });
+
+    test('no additional requirement if debt ≤ 4.5x income', () => {
+      const result = calculateAmorteringskrav({
+        principal: 2250000,  // 75% LTV
+        purchasePrice: 3000000,
+        grossAnnualIncome: 600000,
+        totalDebt: 2000000  // 3.3x income
+      });
+
+      expect(result.yearlyAmortizationPercent).toBe(2);  // Only LTV rule applies
+    });
+  });
+
   describe('calculateMortgagePayment', () => {
-    test('calculates monthly payment for $500k loan at 6% for 30 years', () => {
-      const params: MortgageParams = {
-        principal: 500000,
-        annualInterestRate: 0.06,
+    test('calculates payment for 3M SEK, 20% down, 4% rate, 30 years', () => {
+      const params: SwedishMortgageParams = {
+        purchasePrice: 3000000,
+        downPaymentPercent: 20,
+        annualInterestRate: 0.04,
         loanTermYears: 30,
+        propertyType: 'villa'
       };
 
       const result = calculateMortgagePayment(params);
 
-      expect(result.monthlyPayment).toBeCloseTo(2997.75, 2);
-      expect(result.totalPayments).toBeCloseTo(1079190, 0);
-      expect(result.totalInterest).toBeCloseTo(579190, 0);
+      // Principal: 2.4M SEK (80% LTV)
+      // LTV 80% → 2% amortization → 48k SEK/year → 4000 SEK/month
+      // Interest: ~11,458 SEK/month
+      // Total: ~15,458 SEK/month
+      expect(result.ltv).toBeCloseTo(80, 1);
+      expect(result.amortizationPercent).toBe(2);
+      expect(result.monthlyAmortization).toBeCloseTo(4000, 0);
+      expect(result.monthlyInterest).toBeCloseTo(11458, 0);
+      expect(result.monthlyPayment).toBeCloseTo(15458, 0);
     });
 
-    test('calculates monthly payment for $300k loan at 5% for 15 years', () => {
-      const params: MortgageParams = {
-        principal: 300000,
-        annualInterestRate: 0.05,
-        loanTermYears: 15,
-      };
-
-      const result = calculateMortgagePayment(params);
-
-      expect(result.monthlyPayment).toBeCloseTo(2372.38, 2);
-      expect(result.totalPayments).toBeCloseTo(427028.40, 2);
-      expect(result.totalInterest).toBeCloseTo(127028.40, 2);
-    });
-
-    test('calculates monthly payment for $200k loan at 7% for 30 years', () => {
-      const params: MortgageParams = {
-        principal: 200000,
-        annualInterestRate: 0.07,
+    test('enforces 85% LTV cap (bolånetak)', () => {
+      const params: SwedishMortgageParams = {
+        purchasePrice: 3000000,
+        downPaymentPercent: 10,  // Only 10% down = 90% LTV
+        annualInterestRate: 0.04,
         loanTermYears: 30,
+        propertyType: 'villa'
+      };
+
+      expect(() => calculateMortgagePayment(params)).toThrow('85% bolånetak');
+      expect(() => calculateMortgagePayment(params)).toThrow('LTV 90.0%');
+    });
+
+    test('allows exactly 15% down (85% LTV)', () => {
+      const params: SwedishMortgageParams = {
+        purchasePrice: 3000000,
+        downPaymentPercent: 15,  // Exactly 15% down = 85% LTV
+        annualInterestRate: 0.04,
+        loanTermYears: 30,
+        propertyType: 'villa'
+      };
+
+      const result = calculateMortgagePayment(params);
+      expect(result.ltv).toBeCloseTo(85, 1);
+      expect(result.amortizationPercent).toBe(2);
+    });
+
+    test('calculates for BRF property type', () => {
+      const params: SwedishMortgageParams = {
+        purchasePrice: 2000000,
+        downPaymentPercent: 25,
+        annualInterestRate: 0.045,
+        loanTermYears: 25,
+        propertyType: 'brf'
       };
 
       const result = calculateMortgagePayment(params);
 
-      expect(result.monthlyPayment).toBeCloseTo(1330.60, 2);
+      // 75% LTV → 2% amortization
+      expect(result.ltv).toBeCloseTo(75, 1);
+      expect(result.amortizationPercent).toBe(2);
     });
 
-    test('handles 0% interest rate (edge case)', () => {
-      const params: MortgageParams = {
-        principal: 100000,
+    test('handles 0% interest rate edge case', () => {
+      const params: SwedishMortgageParams = {
+        purchasePrice: 1000000,
+        downPaymentPercent: 40,  // 60% LTV → 1% amortization
         annualInterestRate: 0,
         loanTermYears: 30,
+        propertyType: 'villa'
       };
 
       const result = calculateMortgagePayment(params);
 
-      // 100000 / 360 months = 277.78
-      expect(result.monthlyPayment).toBeCloseTo(277.78, 2);
-      expect(result.totalPayments).toBeCloseTo(100000, 0);
-      expect(result.totalInterest).toBe(0);
-    });
-
-    test('handles zero principal', () => {
-      const params: MortgageParams = {
-        principal: 0,
-        annualInterestRate: 0.05,
-        loanTermYears: 30,
-      };
-
-      const result = calculateMortgagePayment(params);
-
-      expect(result.monthlyPayment).toBe(0);
-      expect(result.totalPayments).toBe(0);
-      expect(result.totalInterest).toBe(0);
-    });
-
-    test('throws error for negative principal', () => {
-      const params: MortgageParams = {
-        principal: -100000,
-        annualInterestRate: 0.05,
-        loanTermYears: 30,
-      };
-
-      expect(() => calculateMortgagePayment(params)).toThrow('Principal must be non-negative');
-    });
-
-    test('throws error for negative interest rate', () => {
-      const params: MortgageParams = {
-        principal: 100000,
-        annualInterestRate: -0.05,
-        loanTermYears: 30,
-      };
-
-      expect(() => calculateMortgagePayment(params)).toThrow('Interest rate must be non-negative');
-    });
-
-    test('throws error for zero or negative loan term', () => {
-      const params: MortgageParams = {
-        principal: 100000,
-        annualInterestRate: 0.05,
-        loanTermYears: 0,
-      };
-
-      expect(() => calculateMortgagePayment(params)).toThrow('Loan term must be positive');
+      expect(result.monthlyInterest).toBe(0);
+      expect(result.monthlyAmortization).toBeCloseTo(500, 0);  // 1% of 600k / 12
+      expect(result.monthlyPayment).toBeCloseTo(500, 0);
     });
   });
 
   describe('calculateTotalCost', () => {
-    test('calculates total monthly cost with all components', () => {
-      const params: TotalCostParams = {
-        purchasePrice: 500000,
-        mortgageParams: {
-          principal: 400000, // 20% down
-          annualInterestRate: 0.06,
-          loanTermYears: 30,
-        },
-        propertyTaxAnnual: 5500,
-        insuranceAnnual: 1500,
-        hoaMonthly: 200,
-        pmiMonthly: 0, // no PMI with 20% down
-        maintenanceRate: 0.01, // 1%
+    test('calculates total cost for villa', () => {
+      const params: SwedishTotalCostParams = {
+        purchasePrice: 3000000,
+        downPaymentPercent: 20,
+        annualInterestRate: 0.04,
+        loanTermYears: 30,
+        propertyType: 'villa',
+        propertyTaxAnnual: 7000,
+        insuranceAnnual: 5000,
+        brfMonthly: 0,  // No BRF for villa
+        maintenanceRate: 0.01  // 1% for villa
       };
 
       const result = calculateTotalCost(params);
 
-      // Mortgage: ~$2398.20
-      expect(result.monthlyMortgage).toBeCloseTo(2398.20, 2);
-      // Property tax: 5500/12 = ~458.33
-      expect(result.monthlyPropertyTax).toBeCloseTo(458.33, 2);
-      // Insurance: 1500/12 = 125
-      expect(result.monthlyInsurance).toBeCloseTo(125, 2);
-      // HOA: 200
-      expect(result.monthlyHOA).toBe(200);
-      // PMI: 0
-      expect(result.monthlyPMI).toBe(0);
-      // Maintenance: (500000 * 0.01) / 12 = ~416.67
-      expect(result.monthlyMaintenance).toBeCloseTo(416.67, 2);
-      // Total: sum of all above
-      expect(result.totalMonthly).toBeCloseTo(3598.20, 2);
-      expect(result.totalAnnual).toBeCloseTo(43178.40, 2);
+      // Mortgage: ~15,458 SEK/month
+      expect(result.monthlyMortgage).toBeCloseTo(15458, 0);
+      // Property tax: 7000/12 = ~583
+      expect(result.monthlyPropertyTax).toBeCloseTo(583, 0);
+      // Insurance: 5000/12 = ~417
+      expect(result.monthlyInsurance).toBeCloseTo(417, 0);
+      // BRF: 0 for villa
+      expect(result.monthlyBRF).toBe(0);
+      // Maintenance: (3M * 1%) / 12 = 2500
+      expect(result.monthlyMaintenance).toBeCloseTo(2500, 0);
+      // Total: 15458 + 583 + 417 + 0 + 2500 = 18958
+      expect(result.totalMonthly).toBeCloseTo(18958, 0);
     });
 
-    test('uses default 1% maintenance rate when not provided', () => {
-      const params: TotalCostParams = {
-        purchasePrice: 500000,
-        mortgageParams: {
-          principal: 400000,
-          annualInterestRate: 0.06,
-          loanTermYears: 30,
-        },
+    test('calculates total cost for BRF (no maintenance)', () => {
+      const params: SwedishTotalCostParams = {
+        purchasePrice: 2000000,
+        downPaymentPercent: 25,
+        annualInterestRate: 0.045,
+        loanTermYears: 25,
+        propertyType: 'brf',
+        propertyTaxAnnual: 0,  // Often 0 for BRF
+        insuranceAnnual: 3000,
+        brfMonthly: 3500  // BRF fee
       };
 
       const result = calculateTotalCost(params);
 
-      // Default maintenance: (500000 * 0.01) / 12 = ~416.67
-      expect(result.monthlyMaintenance).toBeCloseTo(416.67, 2);
-    });
-
-    test('handles custom maintenance rate (2%)', () => {
-      const params: TotalCostParams = {
-        purchasePrice: 500000,
-        mortgageParams: {
-          principal: 400000,
-          annualInterestRate: 0.06,
-          loanTermYears: 30,
-        },
-        maintenanceRate: 0.02, // 2%
-      };
-
-      const result = calculateTotalCost(params);
-
-      // 2% maintenance: (500000 * 0.02) / 12 = ~833.33
-      expect(result.monthlyMaintenance).toBeCloseTo(833.33, 2);
-    });
-
-    test('handles optional costs set to zero', () => {
-      const params: TotalCostParams = {
-        purchasePrice: 500000,
-        mortgageParams: {
-          principal: 400000,
-          annualInterestRate: 0.06,
-          loanTermYears: 30,
-        },
-        propertyTaxAnnual: 0,
-        insuranceAnnual: 0,
-        hoaMonthly: 0,
-        pmiMonthly: 0,
-      };
-
-      const result = calculateTotalCost(params);
-
-      expect(result.monthlyPropertyTax).toBe(0);
-      expect(result.monthlyInsurance).toBe(0);
-      expect(result.monthlyHOA).toBe(0);
-      expect(result.monthlyPMI).toBe(0);
-      // Should still have mortgage + maintenance
+      // BRF: 3500
+      expect(result.monthlyBRF).toBe(3500);
+      // Maintenance: 0 for BRF (included in BRF fee)
+      expect(result.monthlyMaintenance).toBe(0);
       expect(result.totalMonthly).toBeGreaterThan(0);
+    });
+
+    test('uses default 1% maintenance for villa when not specified', () => {
+      const params: SwedishTotalCostParams = {
+        purchasePrice: 2000000,
+        downPaymentPercent: 30,
+        annualInterestRate: 0.04,
+        loanTermYears: 30,
+        propertyType: 'villa'
+        // No maintenanceRate specified
+      };
+
+      const result = calculateTotalCost(params);
+
+      // Default 1%: (2M * 0.01) / 12 = ~1667
+      expect(result.monthlyMaintenance).toBeCloseTo(1667, 0);
     });
   });
 
-  describe('calculateDTI', () => {
-    test('calculates DTI ratios for $5k income, $1.4k housing, $500 other debt', () => {
-      const params: DTIParams = {
-        grossMonthlyIncome: 5000,
-        monthlyHousingCost: 1400,
-        monthlyOtherDebts: 500,
+  describe('calculateAffordability', () => {
+    test('calculates affordability at stress test rate', () => {
+      const params: SwedishAffordabilityParams = {
+        grossMonthlyIncome: 40000,
+        monthlyHousingCost: 20000,
+        monthlyOtherDebts: 3000,
+        stressTestRate: 6.0
       };
 
-      const result = calculateDTI(params);
+      const result = calculateAffordability(params);
 
-      // Front-end: (1400 / 5000) * 100 = 28%
-      expect(result.frontEndDTI).toBeCloseTo(28, 1);
-      // Back-end: ((1400 + 500) / 5000) * 100 = 38%
-      expect(result.backEndDTI).toBeCloseTo(38, 1);
-      // Can afford conventional: 38% <= 50%
-      expect(result.canAffordConventional).toBe(true);
-      // Can afford FHA: 28% <= 31% AND 38% <= 43% (both true)
-      expect(result.canAffordFHA).toBe(true);
-      // Can afford ideal: 38% <= 36% (no)
-      expect(result.canAffordIdeal).toBe(false);
+      // Housing ratio: (20000 / 40000) * 100 = 50%
+      expect(result.housingCostRatio).toBeCloseTo(50, 1);
+      // Total debt ratio: ((20000 + 3000) / 40000) * 100 = 57.5%
+      expect(result.totalDebtRatio).toBeCloseTo(57.5, 1);
+      expect(result.stressTestRate).toBe(6.0);
+      expect(result.canAffordConservative).toBe(false);  // 57.5% > 50%
+      expect(result.canAffordStandard).toBe(true);  // 57.5% ≤ 60%
+      expect(result.reasoning).toContain('6%');
     });
 
-    test('calculates DTI ratios for $6k income, $2k housing, $200 other debt', () => {
-      const params: DTIParams = {
-        grossMonthlyIncome: 6000,
-        monthlyHousingCost: 2000,
-        monthlyOtherDebts: 200,
+    test('passes conservative threshold', () => {
+      const params: SwedishAffordabilityParams = {
+        grossMonthlyIncome: 50000,
+        monthlyHousingCost: 20000,
+        monthlyOtherDebts: 4000,
+        stressTestRate: 5.5
       };
 
-      const result = calculateDTI(params);
+      const result = calculateAffordability(params);
 
-      // Front-end: (2000 / 6000) * 100 = 33.33%
-      expect(result.frontEndDTI).toBeCloseTo(33.3, 1);
-      // Back-end: ((2000 + 200) / 6000) * 100 = 36.67%
-      expect(result.backEndDTI).toBeCloseTo(36.7, 1);
-      expect(result.canAffordConventional).toBe(true);
-      expect(result.canAffordFHA).toBe(false); // front-end 33.3% > 31%
-      expect(result.canAffordIdeal).toBe(false); // back-end 36.7% > 36%
+      // Total debt: (24000 / 50000) * 100 = 48%
+      expect(result.totalDebtRatio).toBeCloseTo(48, 1);
+      expect(result.canAffordConservative).toBe(true);  // 48% ≤ 50%
+      expect(result.canAffordStandard).toBe(true);
     });
 
-    test('calculates DTI ratios for $8k income, $2k housing, no other debt', () => {
-      const params: DTIParams = {
-        grossMonthlyIncome: 8000,
-        monthlyHousingCost: 2000,
-        monthlyOtherDebts: 0,
+    test('fails both thresholds', () => {
+      const params: SwedishAffordabilityParams = {
+        grossMonthlyIncome: 30000,
+        monthlyHousingCost: 18000,
+        monthlyOtherDebts: 3000,
+        stressTestRate: 7.0
       };
 
-      const result = calculateDTI(params);
+      const result = calculateAffordability(params);
 
-      // Front-end: (2000 / 8000) * 100 = 25%
-      expect(result.frontEndDTI).toBeCloseTo(25, 1);
-      // Back-end: ((2000 + 0) / 8000) * 100 = 25%
-      expect(result.backEndDTI).toBeCloseTo(25, 1);
-      expect(result.canAffordConventional).toBe(true);
-      expect(result.canAffordFHA).toBe(true); // 25% <= 31% AND 25% <= 43%
-      expect(result.canAffordIdeal).toBe(true); // 25% <= 36%
-    });
-
-    test('flags high DTI warning thresholds', () => {
-      const params: DTIParams = {
-        grossMonthlyIncome: 4000,
-        monthlyHousingCost: 1800,
-        monthlyOtherDebts: 1000,
-      };
-
-      const result = calculateDTI(params);
-
-      // Front-end: (1800 / 4000) * 100 = 45%
-      expect(result.frontEndDTI).toBeCloseTo(45, 1);
-      // Back-end: ((1800 + 1000) / 4000) * 100 = 70%
-      expect(result.backEndDTI).toBeCloseTo(70, 1);
-      expect(result.canAffordConventional).toBe(false); // 70% > 50%
-      expect(result.canAffordFHA).toBe(false);
-      expect(result.canAffordIdeal).toBe(false);
+      // Total debt: (21000 / 30000) * 100 = 70%
+      expect(result.totalDebtRatio).toBeCloseTo(70, 1);
+      expect(result.canAffordConservative).toBe(false);  // 70% > 50%
+      expect(result.canAffordStandard).toBe(false);  // 70% > 60%
     });
 
     test('throws error for zero income', () => {
-      const params: DTIParams = {
+      const params: SwedishAffordabilityParams = {
         grossMonthlyIncome: 0,
-        monthlyHousingCost: 1000,
-        monthlyOtherDebts: 500,
+        monthlyHousingCost: 15000,
+        monthlyOtherDebts: 2000,
+        stressTestRate: 6.0
       };
 
-      expect(() => calculateDTI(params)).toThrow('Gross monthly income must be positive');
+      expect(() => calculateAffordability(params)).toThrow('Gross monthly income must be positive');
+    });
+  });
+
+  describe('formatCurrencySEK', () => {
+    test('formats as Swedish currency with space separator', () => {
+      expect(formatCurrencySEK(3000000)).toBe('3\u00A0000\u00A0000\u00A0kr');
+      expect(formatCurrencySEK(15431)).toBe('15\u00A0431\u00A0kr');
+      expect(formatCurrencySEK(500)).toBe('500\u00A0kr');
     });
 
-    test('throws error for negative income', () => {
-      const params: DTIParams = {
-        grossMonthlyIncome: -5000,
-        monthlyHousingCost: 1000,
-        monthlyOtherDebts: 500,
-      };
+    test('handles decimals by rounding to whole numbers', () => {
+      expect(formatCurrencySEK(15431.75)).toBe('15\u00A0432\u00A0kr');
+      expect(formatCurrencySEK(1234.49)).toBe('1\u00A0234\u00A0kr');
+    });
+  });
 
-      expect(() => calculateDTI(params)).toThrow('Gross monthly income must be positive');
+  describe('formatNumberSE', () => {
+    test('formats numbers with Swedish locale (space separator)', () => {
+      expect(formatNumberSE(3000000)).toBe('3\u00A0000\u00A0000');
+      expect(formatNumberSE(15431)).toBe('15\u00A0431');
+      expect(formatNumberSE(500)).toBe('500');
     });
   });
 });
