@@ -9,6 +9,7 @@ import {
   type SwedishTotalCostParams,
   type SwedishAffordabilityParams
 } from '../financial/calculations';
+import { PropertyReaction, PropertyComment } from '../types/property';
 
 export type EnrichmentStatus = 'og_only' | 'llm_processing' | 'llm_complete' | 'llm_failed';
 
@@ -121,6 +122,8 @@ interface PropertyLinkState {
   propertyLinks: PropertyLink[];
   isLoading: boolean;
   error: string | null;
+  reactions: Record<string, PropertyReaction[]>;
+  comments: Record<string, PropertyComment[]>;
   addPropertyLink: (url: string, sharedBy: string, latitude?: number, longitude?: number) => Promise<PropertyLink>;
   savePropertyLink: (link: Omit<PropertyLink, 'id' | 'sharedAt'> & { id?: string; sharedAt?: string }) => Promise<PropertyLink>;
   removePropertyLink: (linkId: string) => Promise<void>;
@@ -141,6 +144,19 @@ interface PropertyLinkState {
     }
   ) => Promise<FinancialData>;
   getFinancialResults: (linkId: string) => FinancialData['results'] | null;
+  
+  // Reactions methods
+  addReaction: (propertyId: string, emoji: string, userId: string) => Promise<void>;
+  removeReaction: (reactionId: string, propertyId: string) => Promise<void>;
+  loadReactions: (propertyId: string) => Promise<void>;
+  subscribeToReactions: (propertyId: string) => () => void;
+  
+  // Comments methods
+  addComment: (propertyId: string, content: string, userId: string, userName: string, parentId?: string) => Promise<void>;
+  updateComment: (commentId: string, content: string, propertyId: string) => Promise<void>;
+  deleteComment: (commentId: string, propertyId: string) => Promise<void>;
+  loadComments: (propertyId: string) => Promise<void>;
+  subscribeToComments: (propertyId: string) => () => void;
 }
 
 // Simple localStorage helpers - check both window AND localStorage exist (React Native has window but no localStorage)
@@ -162,6 +178,8 @@ export const usePropertyLinkStore = create<PropertyLinkState>((set, get) => ({
   propertyLinks: loadPropertyLinks(),
   isLoading: false,
   error: null,
+  reactions: {},
+  comments: {},
 
   /**
    * Two-stage property data extraction:
@@ -383,20 +401,34 @@ export const usePropertyLinkStore = create<PropertyLinkState>((set, get) => ({
   },
 
   removePropertyLink: async (linkId: string) => {
-    // Optimistic update
+    // Optimistic update - Update UI immediately (localStorage)
     const updatedLinks = get().propertyLinks.filter((link) => link.id !== linkId);
     set({ propertyLinks: updatedLinks });
     savePropertyLinks(updatedLinks);
 
-    // Sync to database
+    // Sync to database (Supabase)
     try {
-      await supabase
+      const { error } = await supabase
         .from('property_links')
         .delete()
         .eq('id', linkId);
+
+      if (error) {
+        console.error('❌ Failed to delete from database:', {
+          linkId,
+          error: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+        });
+        // Note: Local deletion already succeeded, which is the primary source of truth
+        // The property will be gone from the UI but may reappear if RLS policy blocks deletion
+      } else {
+        console.log('✅ Property deleted from database:', linkId);
+      }
     } catch (error) {
-      console.error('Failed to delete from database:', error);
-      // Don't revert - local deletion is more important
+      console.error('❌ Exception during database deletion:', error);
+      // Don't revert - local deletion is more important per hybrid storage strategy
     }
   },
 
@@ -595,5 +627,377 @@ export const usePropertyLinkStore = create<PropertyLinkState>((set, get) => ({
     const { propertyLinks } = get();
     const link = propertyLinks.find(l => l.id === linkId);
     return link?.financialData?.results || null;
+  },
+
+  // ============ REACTIONS ============
+  
+  addReaction: async (propertyId, emoji, userId) => {
+    try {
+      console.log('🔄 addReaction called:', { propertyId, emoji, userId });
+      
+      // Check if user already reacted with this emoji
+      const existingReactions = get().reactions[propertyId] || [];
+      const existing = existingReactions.find(r => r.userId === userId && r.emoji === emoji);
+      
+      if (existing) {
+        // Toggle off - remove reaction
+        console.log('🔄 Toggling off existing reaction:', existing.id);
+        await get().removeReaction(existing.id, propertyId);
+        return;
+      }
+
+      console.log('➕ Inserting new reaction to Supabase...');
+      
+      // Add new reaction
+      const { data, error } = await supabase
+        .from('property_reactions')
+        .insert({
+          property_id: propertyId,
+          user_id: userId,
+          emoji: emoji,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ Supabase error:', error);
+        throw error;
+      }
+      
+      console.log('✅ Reaction saved to Supabase:', data);
+
+      // Convert to camelCase and add to state
+      const newReaction: PropertyReaction = {
+        id: data.id,
+        propertyId: data.property_id,
+        userId: data.user_id,
+        emoji: data.emoji,
+        createdAt: data.created_at,
+      };
+
+      set({
+        reactions: {
+          ...get().reactions,
+          [propertyId]: [...existingReactions, newReaction],
+        },
+      });
+      
+      console.log('✅ Reaction added to local state, total reactions:', existingReactions.length + 1);
+    } catch (error: any) {
+      console.error('❌ Error adding reaction:', {
+        error,
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+      });
+      throw error;
+    }
+  },
+
+  removeReaction: async (reactionId, propertyId) => {
+    try {
+      const { error } = await supabase
+        .from('property_reactions')
+        .delete()
+        .eq('id', reactionId);
+
+      if (error) throw error;
+
+      // Remove from state
+      const currentReactions = get().reactions[propertyId] || [];
+      set({
+        reactions: {
+          ...get().reactions,
+          [propertyId]: currentReactions.filter(r => r.id !== reactionId),
+        },
+      });
+    } catch (error) {
+      console.error('Error removing reaction:', error);
+      throw error;
+    }
+  },
+
+  loadReactions: async (propertyId) => {
+    try {
+      const { data, error } = await supabase
+        .from('property_reactions')
+        .select('*')
+        .eq('property_id', propertyId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      // Convert to camelCase
+      const reactions: PropertyReaction[] = (data || []).map(item => ({
+        id: item.id,
+        propertyId: item.property_id,
+        userId: item.user_id,
+        emoji: item.emoji,
+        createdAt: item.created_at,
+      }));
+
+      set({
+        reactions: {
+          ...get().reactions,
+          [propertyId]: reactions,
+        },
+      });
+    } catch (error) {
+      console.error('Error loading reactions:', error);
+    }
+  },
+
+  subscribeToReactions: (propertyId) => {
+    console.log('🔔 Subscribing to reactions for property:', propertyId);
+    
+    const channel = supabase
+      .channel(`reactions:${propertyId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'property_reactions',
+          filter: `property_id=eq.${propertyId}`,
+        },
+        (payload) => {
+          console.log('📨 Reaction update:', payload);
+          
+          if (payload.eventType === 'INSERT') {
+            const newReaction: PropertyReaction = {
+              id: payload.new.id,
+              propertyId: payload.new.property_id,
+              userId: payload.new.user_id,
+              emoji: payload.new.emoji,
+              createdAt: payload.new.created_at,
+            };
+            
+            const current = get().reactions[propertyId] || [];
+            set({
+              reactions: {
+                ...get().reactions,
+                [propertyId]: [...current, newReaction],
+              },
+            });
+          } else if (payload.eventType === 'DELETE') {
+            const current = get().reactions[propertyId] || [];
+            set({
+              reactions: {
+                ...get().reactions,
+                [propertyId]: current.filter(r => r.id !== payload.old.id),
+              },
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('🔕 Unsubscribing from reactions for property:', propertyId);
+      supabase.removeChannel(channel);
+    };
+  },
+
+  // ============ COMMENTS ============
+  
+  addComment: async (propertyId, content, userId, userName, parentId) => {
+    try {
+      const { data, error } = await supabase
+        .from('property_comments')
+        .insert({
+          property_id: propertyId,
+          parent_id: parentId || null,
+          user_id: userId,
+          user_name: userName,
+          content: content,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Convert to camelCase and add to state
+      const newComment: PropertyComment = {
+        id: data.id,
+        propertyId: data.property_id,
+        parentId: data.parent_id,
+        userId: data.user_id,
+        userName: data.user_name,
+        content: data.content,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
+
+      const currentComments = get().comments[propertyId] || [];
+      set({
+        comments: {
+          ...get().comments,
+          [propertyId]: [...currentComments, newComment],
+        },
+      });
+    } catch (error) {
+      console.error('Error adding comment:', error);
+      throw error;
+    }
+  },
+
+  updateComment: async (commentId, content, propertyId) => {
+    try {
+      const { data, error } = await supabase
+        .from('property_comments')
+        .update({ content })
+        .eq('id', commentId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Update in state
+      const currentComments = get().comments[propertyId] || [];
+      set({
+        comments: {
+          ...get().comments,
+          [propertyId]: currentComments.map(c =>
+            c.id === commentId
+              ? {
+                  ...c,
+                  content: data.content,
+                  updatedAt: data.updated_at,
+                }
+              : c
+          ),
+        },
+      });
+    } catch (error) {
+      console.error('Error updating comment:', error);
+      throw error;
+    }
+  },
+
+  deleteComment: async (commentId, propertyId) => {
+    try {
+      const { error } = await supabase
+        .from('property_comments')
+        .delete()
+        .eq('id', commentId);
+
+      if (error) throw error;
+
+      // Remove from state (cascade will handle replies)
+      const currentComments = get().comments[propertyId] || [];
+      set({
+        comments: {
+          ...get().comments,
+          [propertyId]: currentComments.filter(c => c.id !== commentId),
+        },
+      });
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+      throw error;
+    }
+  },
+
+  loadComments: async (propertyId) => {
+    try {
+      const { data, error } = await supabase
+        .from('property_comments')
+        .select('*')
+        .eq('property_id', propertyId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      // Convert to camelCase
+      const comments: PropertyComment[] = (data || []).map(item => ({
+        id: item.id,
+        propertyId: item.property_id,
+        parentId: item.parent_id,
+        userId: item.user_id,
+        userName: item.user_name,
+        content: item.content,
+        createdAt: item.created_at,
+        updatedAt: item.updated_at,
+      }));
+
+      set({
+        comments: {
+          ...get().comments,
+          [propertyId]: comments,
+        },
+      });
+    } catch (error) {
+      console.error('Error loading comments:', error);
+    }
+  },
+
+  subscribeToComments: (propertyId) => {
+    console.log('🔔 Subscribing to comments for property:', propertyId);
+    
+    const channel = supabase
+      .channel(`comments:${propertyId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'property_comments',
+          filter: `property_id=eq.${propertyId}`,
+        },
+        (payload) => {
+          console.log('📨 Comment update:', payload);
+          
+          if (payload.eventType === 'INSERT') {
+            const newComment: PropertyComment = {
+              id: payload.new.id,
+              propertyId: payload.new.property_id,
+              parentId: payload.new.parent_id,
+              userId: payload.new.user_id,
+              userName: payload.new.user_name,
+              content: payload.new.content,
+              createdAt: payload.new.created_at,
+              updatedAt: payload.new.updated_at,
+            };
+            
+            const current = get().comments[propertyId] || [];
+            set({
+              comments: {
+                ...get().comments,
+                [propertyId]: [...current, newComment],
+              },
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const current = get().comments[propertyId] || [];
+            set({
+              comments: {
+                ...get().comments,
+                [propertyId]: current.map(c =>
+                  c.id === payload.new.id
+                    ? {
+                        ...c,
+                        content: payload.new.content,
+                        updatedAt: payload.new.updated_at,
+                      }
+                    : c
+                ),
+              },
+            });
+          } else if (payload.eventType === 'DELETE') {
+            const current = get().comments[propertyId] || [];
+            set({
+              comments: {
+                ...get().comments,
+                [propertyId]: current.filter(c => c.id !== payload.old.id),
+              },
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('🔕 Unsubscribing from comments for property:', propertyId);
+      supabase.removeChannel(channel);
+    };
   },
 }));

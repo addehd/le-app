@@ -1,14 +1,19 @@
 import { View, Text, ScrollView, Pressable, Image, Platform, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { usePropertyLinkStore } from '../../../../lib/store/propertyLinkStore';
 import { FinancialCalculatorForm } from '../../../../components/financial/FinancialCalculatorForm';
 import { FinancialResults } from '../../../../components/financial/FinancialResults';
+import { PropertyReactions } from '../../../../components/property/PropertyReactions';
+import { PropertyComments } from '../../../../components/property/PropertyComments';
 
 export default function PropertyDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { propertyLinks, getFinancialResults } = usePropertyLinkStore();
+  const [showCalculator, setShowCalculator] = useState(false);
 
   // Find the property
   const property = propertyLinks.find(p => p.id === id);
@@ -140,33 +145,56 @@ export default function PropertyDetailScreen() {
             </div>
           </div>
 
-          {/* Financial Calculator Section */}
+          {/* Reactions & Comments Section */}
           <div className="bg-white rounded-xl shadow-md p-6 mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">
-              Financial Calculator
-            </h2>
-
-            <FinancialCalculatorForm
-              propertyId={id}
-              initialData={property.financialData}
-              onCalculate={(results) => {
-                console.log('Calculation complete:', results);
-              }}
-            />
+            <PropertyReactions propertyId={id} />
+            
+            <div className="mt-6">
+              <PropertyComments propertyId={id} />
+            </div>
           </div>
 
-          {/* Results Section */}
-          <div className="bg-white rounded-xl shadow-md p-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">
-              Calculation Results
-            </h2>
+          {/* Financial Calculator Section */}
+          <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+            <button
+              onClick={() => setShowCalculator(!showCalculator)}
+              className="flex items-center justify-between w-full mb-4"
+            >
+              <h2 className="text-2xl font-bold text-gray-900">
+                Financial Calculator
+              </h2>
+              {showCalculator ? (
+                <ChevronUp size={24} color="#6b7280" />
+              ) : (
+                <ChevronDown size={24} color="#6b7280" />
+              )}
+            </button>
 
-            <FinancialResults
-              results={financialResults}
-              mortgage={property.financialData?.mortgage}
-              totalCost={property.financialData?.totalCost}
-              affordability={property.financialData?.affordability}
-            />
+            {showCalculator && (
+              <>
+                <FinancialCalculatorForm
+                  propertyId={id}
+                  initialData={property.financialData}
+                  onCalculate={(results) => {
+                    console.log('Calculation complete:', results);
+                  }}
+                />
+
+                {/* Results Section */}
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <h3 className="text-xl font-bold text-gray-900 mb-4">
+                    Calculation Results
+                  </h3>
+
+                  <FinancialResults
+                    results={financialResults}
+                    mortgage={property.financialData?.mortgage}
+                    totalCost={property.financialData?.totalCost}
+                    affordability={property.financialData?.affordability}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -260,33 +288,56 @@ export default function PropertyDetailScreen() {
             </View>
           </View>
 
-          {/* Financial Calculator Section */}
+          {/* Reactions & Comments Section */}
           <View className="bg-white rounded-xl shadow-md p-4 mb-4">
-            <Text className="text-xl font-bold text-gray-900 mb-4">
-              Financial Calculator
-            </Text>
-
-            <FinancialCalculatorForm
-              propertyId={id}
-              initialData={property.financialData}
-              onCalculate={(results) => {
-                console.log('Calculation complete:', results);
-              }}
-            />
+            <PropertyReactions propertyId={id} />
+            
+            <View className="mt-6">
+              <PropertyComments propertyId={id} />
+            </View>
           </View>
 
-          {/* Results Section */}
+          {/* Financial Calculator Section */}
           <View className="bg-white rounded-xl shadow-md p-4 mb-6">
-            <Text className="text-xl font-bold text-gray-900 mb-4">
-              Calculation Results
-            </Text>
+            <Pressable
+              onPress={() => setShowCalculator(!showCalculator)}
+              className="flex-row items-center justify-between mb-4"
+            >
+              <Text className="text-xl font-bold text-gray-900">
+                Financial Calculator
+              </Text>
+              {showCalculator ? (
+                <ChevronUp size={24} color="#6b7280" />
+              ) : (
+                <ChevronDown size={24} color="#6b7280" />
+              )}
+            </Pressable>
 
-            <FinancialResults
-              results={financialResults}
-              mortgage={property.financialData?.mortgage}
-              totalCost={property.financialData?.totalCost}
-              affordability={property.financialData?.affordability}
-            />
+            {showCalculator && (
+              <>
+                <FinancialCalculatorForm
+                  propertyId={id}
+                  initialData={property.financialData}
+                  onCalculate={(results) => {
+                    console.log('Calculation complete:', results);
+                  }}
+                />
+
+                {/* Results Section */}
+                <View className="mt-6 pt-6 border-t border-gray-200">
+                  <Text className="text-lg font-bold text-gray-900 mb-4">
+                    Calculation Results
+                  </Text>
+
+                  <FinancialResults
+                    results={financialResults}
+                    mortgage={property.financialData?.mortgage}
+                    totalCost={property.financialData?.totalCost}
+                    affordability={property.financialData?.affordability}
+                  />
+                </View>
+              </>
+            )}
           </View>
         </View>
       </ScrollView>

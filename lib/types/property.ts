@@ -74,3 +74,24 @@ export interface ProsCons {
   pros: string[];
   cons: string[];
 }
+
+// Reactions and Comments types
+export interface PropertyReaction {
+  id: string;
+  propertyId: string;
+  userId: string;
+  emoji: string;
+  createdAt: string;
+}
+
+export interface PropertyComment {
+  id: string;
+  propertyId: string;
+  parentId?: string;
+  userId: string;
+  userName: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  replies?: PropertyComment[];
+}

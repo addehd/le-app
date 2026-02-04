@@ -17,7 +17,7 @@ export default function AuthScreen() {
 
   useEffect(() => {
     if (user) {
-      router.push('/profile');
+      router.push('/(tabs)/profile');
     }
   }, [user]);
 
