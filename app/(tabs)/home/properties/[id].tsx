@@ -3,7 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
-import { usePropertyLinkStore } from '../../../../lib/store/propertyLinkStore';
+import { useProperty } from '../../../../lib/query/useProperties';
 import { FinancialCalculatorForm } from '../../../../components/financial/FinancialCalculatorForm';
 import { FinancialResults } from '../../../../components/financial/FinancialResults';
 import { PropertyReactions } from '../../../../components/property/PropertyReactions';
@@ -12,14 +12,21 @@ import { PropertyComments } from '../../../../components/property/PropertyCommen
 export default function PropertyDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { propertyLinks, getFinancialResults } = usePropertyLinkStore();
+  const { property, isLoading } = useProperty(id);
   const [showCalculator, setShowCalculator] = useState(false);
-
-  // Find the property
-  const property = propertyLinks.find(p => p.id === id);
 
   // Get financial results
   const financialResults = property?.financialData?.results || null;
+
+  if (isLoading) {
+    return (
+      <SafeAreaView className="flex-1 bg-gray-100">
+        <View className="flex-1 items-center justify-center p-6">
+          <Text className="text-gray-600">Loading property...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!property) {
     return (

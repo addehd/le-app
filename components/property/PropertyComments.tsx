@@ -1,7 +1,8 @@
 import { View, Text, TextInput, Pressable, Platform, ScrollView } from 'react-native';
-import { useState, useEffect, useRef } from 'react';
-import { usePropertyLinkStore } from '../../lib/store/propertyLinkStore';
-import { useAuthStore } from '../../lib/store/authStore';
+import { useState, useRef } from 'react';
+import { useComments } from '../../lib/query/useComments';
+import { useCommentsRealtimeSubscription } from '../../lib/query/useRealtimeSubscriptions';
+import { useAuth } from '../../lib/query/useAuth';
 import { PropertyComment } from '../../lib/types/property';
 import { CommentItem } from './CommentItem';
 import { Send } from 'lucide-react-native';
@@ -12,21 +13,20 @@ interface PropertyCommentsProps {
 
 export function PropertyComments({ propertyId }: PropertyCommentsProps) {
   const { 
-    comments, 
+    comments: propertyComments, 
     addComment, 
     updateComment, 
     deleteComment,
-    loadComments, 
-    subscribeToComments 
-  } = usePropertyLinkStore();
-  const { user } = useAuthStore();
+    isAddingComment,
+  } = useComments(propertyId);
+  const { user } = useAuth();
   
   const [newComment, setNewComment] = useState('');
   const [replyToId, setReplyToId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
-  const propertyComments = comments[propertyId] || [];
+  // Subscribe to realtime updates
+  useCommentsRealtimeSubscription(propertyId);
 
   // Get user ID and name
   const getUserInfo = () => {
@@ -59,24 +59,14 @@ export function PropertyComments({ propertyId }: PropertyCommentsProps) {
 
   const commentTree = buildCommentTree(propertyComments);
 
-  // Load comments on mount
-  useEffect(() => {
-    loadComments(propertyId);
-    
-    // Subscribe to real-time updates
-    const unsubscribe = subscribeToComments(propertyId);
-    return unsubscribe;
-  }, [propertyId]);
-
   // Find the comment being replied to
   const replyToComment = replyToId
     ? propertyComments.find(c => c.id === replyToId)
     : null;
 
-  const handleSubmitComment = async () => {
-    if (!newComment.trim() || isLoading) return;
+  const handleSubmitComment = () => {
+    if (!newComment.trim() || isAddingComment) return;
     
-    setIsLoading(true);
     try {
       const userInfo = getUserInfo();
       await addComment(propertyId, newComment.trim(), userInfo.id, userInfo.name, replyToId || undefined);
@@ -102,12 +92,12 @@ export function PropertyComments({ propertyId }: PropertyCommentsProps) {
     setReplyToId(null);
   };
 
-  const handleEdit = async (commentId: string, content: string) => {
-    await updateComment(commentId, content, propertyId);
+  const handleEdit = (commentId: string, content: string) => {
+    updateComment({ commentId, content });
   };
 
-  const handleDelete = async (commentId: string) => {
-    await deleteComment(commentId, propertyId);
+  const handleDelete = (commentId: string) => {
+    deleteComment(commentId);
   };
 
   const userInfo = getUserInfo();

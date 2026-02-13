@@ -1,36 +1,19 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Platform, ScrollView, View, Text, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { usePropertyLinkStore } from '../../lib/store/propertyLinkStore';
-import { useComparisonStore } from '../../lib/store/comparisonStore';
+import { useProperties } from '../../lib/query/useProperties';
+import { useComparison } from '../../lib/query/useComparison';
 
 export default function CompareTab() {
-  const { propertyLinks } = usePropertyLinkStore();
+  const { properties } = useProperties();
   const {
     selectedPropertyIds,
     comparisonData,
     addPropertyToComparison,
     removePropertyFromComparison,
-    generateComparison,
-    enableAutoSave,
-    disableAutoSave,
-  } = useComparisonStore();
+  } = useComparison();
 
   const [showSelector, setShowSelector] = useState(false);
-
-  useEffect(() => {
-    enableAutoSave();
-    return () => disableAutoSave();
-  }, []);
-
-  useEffect(() => {
-    if (selectedPropertyIds.length > 0) {
-      const selectedProperties = propertyLinks.filter((p) =>
-        selectedPropertyIds.includes(p.id)
-      );
-      generateComparison(selectedProperties);
-    }
-  }, [selectedPropertyIds, propertyLinks]);
 
   const handleToggleProperty = (propertyId: string) => {
     if (selectedPropertyIds.includes(propertyId)) {
@@ -38,6 +21,15 @@ export default function CompareTab() {
     } else {
       addPropertyToComparison(propertyId);
     }
+  };
+
+  // Get property display data
+  const getPropertyDisplay = (propertyId: string) => {
+    const property = properties.find(p => p.id === propertyId);
+    return {
+      address: property?.propertyData?.address || property?.title || 'Unknown',
+      price: property?.propertyData?.price,
+    };
   };
 
   if (Platform.OS === 'web') {
@@ -67,11 +59,11 @@ export default function CompareTab() {
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h2 className="text-lg font-semibold mb-4">Välj bostäder att jämföra</h2>
-              {propertyLinks.length === 0 ? (
+              {properties.length === 0 ? (
                 <p className="text-gray-500">Inga bostäder sparade ännu. Lägg till bostäder i Bostadslistan först.</p>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {propertyLinks.map((property) => (
+                  {properties.map((property) => (
                     <button
                       key={property.id}
                       onClick={() => handleToggleProperty(property.id)}
@@ -81,8 +73,8 @@ export default function CompareTab() {
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
-                      <p className="font-medium text-sm truncate">{property.address || 'Okänd adress'}</p>
-                      <p className="text-xs text-gray-500">{property.price ? `${property.price.toLocaleString('sv-SE')} kr` : ''}</p>
+                      <p className="font-medium text-sm truncate">{property.propertyData?.address || property.title || 'Okänd adress'}</p>
+                      <p className="text-xs text-gray-500">{property.propertyData?.price ? `${property.propertyData.price.toLocaleString('sv-SE')} kr` : ''}</p>
                     </button>
                   ))}
                 </div>
@@ -113,22 +105,22 @@ export default function CompareTab() {
             <div className="flex gap-6 overflow-x-auto pb-6">
               {comparisonData.map((comparison) => (
                 <div key={comparison.property.id} className="min-w-[300px] bg-white rounded-xl shadow-lg p-6">
-                  <h3 className="font-bold text-lg mb-2">{comparison.property.address || 'Okänd adress'}</h3>
+                  <h3 className="font-bold text-lg mb-2">{comparison.property.propertyData?.address || comparison.property.title || 'Okänd adress'}</h3>
                   <p className="text-2xl font-bold text-blue-600 mb-4">
-                    {comparison.property.price?.toLocaleString('sv-SE')} kr
+                    {comparison.property.propertyData?.price?.toLocaleString('sv-SE')} kr
                   </p>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-500">Rum</span>
-                      <span className="font-medium">{comparison.property.rooms || '-'}</span>
+                      <span className="font-medium">{comparison.property.propertyData?.bedrooms || '-'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">Storlek</span>
-                      <span className="font-medium">{comparison.property.size ? `${comparison.property.size} m²` : '-'}</span>
+                      <span className="font-medium">{comparison.property.propertyData?.area ? `${comparison.property.propertyData.area} m²` : '-'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">Avgift</span>
-                      <span className="font-medium">{comparison.property.fee ? `${comparison.property.fee} kr/mån` : '-'}</span>
+                      <span className="font-medium">{comparison.property.propertyData?.monthlyFee ? `${comparison.property.propertyData.monthlyFee} kr/mån` : '-'}</span>
                     </div>
                   </div>
                 </div>
@@ -160,11 +152,11 @@ export default function CompareTab() {
       {showSelector && (
         <View className="bg-white mx-4 mt-4 p-4 rounded-xl shadow-lg">
           <Text className="text-lg font-semibold mb-3">Välj bostäder</Text>
-          {propertyLinks.length === 0 ? (
+          {properties.length === 0 ? (
             <Text className="text-gray-500">Inga bostäder sparade ännu.</Text>
           ) : (
             <View className="flex-row flex-wrap gap-2">
-              {propertyLinks.map((property) => (
+              {properties.map((property) => (
                 <Pressable
                   key={property.id}
                   onPress={() => handleToggleProperty(property.id)}
@@ -174,7 +166,7 @@ export default function CompareTab() {
                       : 'border-gray-200'
                   }`}
                 >
-                  <Text className="font-medium text-sm">{property.address || 'Okänd'}</Text>
+                  <Text className="font-medium text-sm">{property.propertyData?.address || property.title || 'Okänd'}</Text>
                 </Pressable>
               ))}
             </View>
@@ -198,18 +190,18 @@ export default function CompareTab() {
           <View className="flex-row gap-4 p-6">
             {comparisonData.map((comparison) => (
               <View key={comparison.property.id} className="w-72 bg-white rounded-xl shadow-lg p-4">
-                <Text className="font-bold text-lg mb-2">{comparison.property.address || 'Okänd'}</Text>
+                <Text className="font-bold text-lg mb-2">{comparison.property.propertyData?.address || comparison.property.title || 'Okänd'}</Text>
                 <Text className="text-xl font-bold text-blue-600 mb-3">
-                  {comparison.property.price?.toLocaleString('sv-SE')} kr
+                  {comparison.property.propertyData?.price?.toLocaleString('sv-SE')} kr
                 </Text>
                 <View className="space-y-2">
                   <View className="flex-row justify-between">
                     <Text className="text-gray-500">Rum</Text>
-                    <Text className="font-medium">{comparison.property.rooms || '-'}</Text>
+                    <Text className="font-medium">{comparison.property.propertyData?.bedrooms || '-'}</Text>
                   </View>
                   <View className="flex-row justify-between">
                     <Text className="text-gray-500">Storlek</Text>
-                    <Text className="font-medium">{comparison.property.size ? `${comparison.property.size} m²` : '-'}</Text>
+                    <Text className="font-medium">{comparison.property.propertyData?.area ? `${comparison.property.propertyData.area} m²` : '-'}</Text>
                   </View>
                 </View>
               </View>

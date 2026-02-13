@@ -1,7 +1,8 @@
 import { View, Text, Pressable, Platform } from 'react-native';
-import { useState, useEffect } from 'react';
-import { usePropertyLinkStore } from '../../lib/store/propertyLinkStore';
-import { useAuthStore } from '../../lib/store/authStore';
+import { useState } from 'react';
+import { useReactions } from '../../lib/query/useReactions';
+import { useReactionsRealtimeSubscription } from '../../lib/query/useRealtimeSubscriptions';
+import { useAuth } from '../../lib/query/useAuth';
 
 interface PropertyReactionsProps {
   propertyId: string;
@@ -10,12 +11,14 @@ interface PropertyReactionsProps {
 const AVAILABLE_EMOJIS = ['❤️', '👍', '⭐', '🔥', '😍'];
 
 export function PropertyReactions({ propertyId }: PropertyReactionsProps) {
-  const { reactions, addReaction, loadReactions, subscribeToReactions } = usePropertyLinkStore();
-  const { user } = useAuthStore();
-  const [isLoading, setIsLoading] = useState(false);
+  const { reactions, addReaction, isAddingReaction } = useReactions(propertyId);
+  const { user } = useAuth();
   const [error, setError] = useState<string | null>(null);
 
-  const propertyReactions = reactions[propertyId] || [];
+  // Subscribe to realtime updates
+  useReactionsRealtimeSubscription(propertyId);
+
+  const propertyReactions = reactions;
 
   // Get user ID (authenticated or anonymous)
   const getUserId = () => {
@@ -46,25 +49,15 @@ export function PropertyReactions({ propertyId }: PropertyReactionsProps) {
     return acc;
   }, {} as Record<string, boolean>);
 
-  // Load reactions on mount
-  useEffect(() => {
-    loadReactions(propertyId);
+  const handleReaction = (emoji: string) => {
+    if (isAddingReaction) return;
     
-    // Subscribe to real-time updates
-    const unsubscribe = subscribeToReactions(propertyId);
-    return unsubscribe;
-  }, [propertyId]);
-
-  const handleReaction = async (emoji: string) => {
-    if (isLoading) return;
-    
-    setIsLoading(true);
     setError(null);
     
     console.log('🎯 Adding reaction:', { propertyId, emoji, userId });
     
     try {
-      await addReaction(propertyId, emoji, userId);
+      addReaction({ emoji, userId });
       console.log('✅ Reaction added successfully');
     } catch (error: any) {
       console.error('❌ Error adding reaction:', error);
@@ -73,8 +66,6 @@ export function PropertyReactions({ propertyId }: PropertyReactionsProps) {
       
       // Auto-clear error after 5 seconds
       setTimeout(() => setError(null), 5000);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -101,7 +92,7 @@ export function PropertyReactions({ propertyId }: PropertyReactionsProps) {
             <Pressable
               key={emoji}
               onPress={() => handleReaction(emoji)}
-              disabled={isLoading}
+              disabled={isAddingReaction}
               className={`
                 flex-row items-center px-3 py-2 rounded-full border
                 ${hasReacted 
@@ -111,7 +102,7 @@ export function PropertyReactions({ propertyId }: PropertyReactionsProps) {
                 ${Platform.OS === 'web' ? 'hover:opacity-80' : ''}
               `}
               style={({ pressed }) => ({
-                opacity: pressed || isLoading ? 0.7 : 1,
+                opacity: pressed || isAddingReaction ? 0.7 : 1,
               })}
             >
               <Text className="text-xl mr-1">{emoji}</Text>

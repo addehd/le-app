@@ -1,7 +1,9 @@
 import { View, Text, TextInput, Pressable, ScrollView, Platform } from 'react-native';
 import { useState } from 'react';
 import { DollarSign, Home, Calculator, ChevronDown, ChevronUp } from 'lucide-react-native';
-import { usePropertyLinkStore, type FinancialData } from '../../lib/store/propertyLinkStore';
+import { type FinancialData } from '../../lib/store/propertyLinkStore';
+import { useProperties } from '../../lib/query/useProperties';
+import { calculateMortgagePayment, calculateTotalCost, calculateAffordability } from '../../lib/financial/calculations';
 import type { MortgageParams, TotalCostParams, DTIParams } from '../../lib/financial/calculations';
 
 interface FinancialCalculatorFormProps {
@@ -15,7 +17,7 @@ export function FinancialCalculatorForm({
   initialData,
   onCalculate
 }: FinancialCalculatorFormProps) {
-  const { calculateAndSaveFinancials } = usePropertyLinkStore();
+  const { updateFinancialData } = useProperties();
 
   // Loading state
   const [isCalculating, setIsCalculating] = useState(false);
@@ -123,12 +125,44 @@ export function FinancialCalculatorForm({
         };
       }
 
-      // Calculate and save
-      const results = await calculateAndSaveFinancials(propertyId, inputs);
+      // Calculate results
+      let results: any = {};
+
+      if (inputs.mortgage) {
+        const mortgageResult = calculateMortgagePayment(inputs.mortgage);
+        results.monthlyPayment = mortgageResult.monthlyPayment;
+        results.totalInterest = mortgageResult.totalInterest;
+        results.totalPaid = mortgageResult.totalPaid;
+      }
+
+      if (inputs.totalCost) {
+        const totalCostResult = calculateTotalCost(inputs.totalCost);
+        results.totalMonthly = totalCostResult.totalMonthly;
+      }
+
+      if (inputs.affordability) {
+        const affordabilityResult = calculateAffordability(inputs.affordability);
+        results.dtiRatio = affordabilityResult.dtiRatio;
+        results.canAfford = affordabilityResult.canAfford;
+      }
+
+      // Build FinancialData object
+      const financialData: FinancialData = {
+        mortgage: inputs.mortgage,
+        totalCost: inputs.totalCost,
+        affordability: inputs.affordability,
+        results: {
+          ...results,
+          calculatedAt: new Date().toISOString()
+        }
+      };
+
+      // Save to database
+      updateFinancialData({ id: propertyId, financialData });
 
       // Call callback if provided
-      if (onCalculate && results.results) {
-        onCalculate(results.results);
+      if (onCalculate && financialData.results) {
+        onCalculate(financialData.results);
       }
 
     } catch (err: any) {

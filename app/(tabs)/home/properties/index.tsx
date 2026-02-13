@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { Platform, View, Text, Pressable, ScrollView, TextInput, Image, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { usePropertyLinkStore, PropertyLink } from '../../../../lib/store/propertyLinkStore';
-import { useAuthStore } from '../../../../lib/store/authStore';
+import { PropertyLink } from '../../../../lib/store/propertyLinkStore';
+import { useProperties } from '../../../../lib/query/useProperties';
+import { usePropertyRealtimeSubscription } from '../../../../lib/query/useRealtimeSubscriptions';
+import { useAuth } from '../../../../lib/query/useAuth';
 import { fetchOGData, fetchGeocodeData } from './api';
 
 function PropertyCard({ property, onRemove }: { property: PropertyLink; onRemove: () => void }) {
@@ -188,85 +190,41 @@ function LoadingCard() {
 export default function PropertiesScreen() {
   const router = useRouter();
   const [url, setUrl] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuthStore();
+  const { user } = useAuth();
   const {
-    propertyLinks,
-    savePropertyLink,
-    removePropertyLink,
-    loadFromDatabase,
-  } = usePropertyLinkStore();
+    properties,
+    isLoading: isLoadingProperties,
+    addProperty,
+    deleteProperty,
+  } = useProperties();
 
-  useEffect(() => {
-    loadFromDatabase();
-  }, []);
+  // Subscribe to realtime updates
+  usePropertyRealtimeSubscription();
 
   const handleAddProperty = async () => {
     if (!url.trim()) return;
 
-    setIsLoading(true);
     setError(null);
 
     try {
-      // Fetch OG data and geocoding data in parallel
-      const [ogResult, geocodeResult] = await Promise.allSettled([
-        fetchOGData(url),
-        fetchGeocodeData(url),
-      ]);
-
-      // OG data is critical - throw if it fails
-      if (ogResult.status === 'rejected') {
-        throw new Error('Failed to fetch property data');
-      }
-      const ogData = ogResult.value;
-
-      // Geocode data is optional - just log if it fails
-      const geocodeData = geocodeResult.status === 'fulfilled' ? geocodeResult.value : null;
+      // Fetch geocoding data (optional)
+      const geocodeData = await fetchGeocodeData(url).catch(() => null);
       
-      if (geocodeResult.status === 'rejected') {
-        console.warn('Geocoding failed, continuing without location data:', geocodeResult.reason);
-      }
-
-      console.log('OG data:', ogData);
-      console.log('Geocode data:', geocodeData);
-      
-      // Merge location data: prefer geocode over OG metadata
-      const latitude = geocodeData?.latitude ?? ogData.latitude;
-      const longitude = geocodeData?.longitude ?? ogData.longitude;
-      const address = geocodeData?.address ?? ogData.address;
-      const city = geocodeData?.city ?? ogData.city;
-      
-      // Save to store with merged data
       const sharedBy = user?.email || 'anon';
-      await savePropertyLink({
-        url,
-        title: ogData.title,
-        description: ogData.description,
-        image: ogData.image,
+      
+      // Add property (metadata fetching happens in the API)
+      addProperty({
+        url: url.trim(),
         sharedBy,
-        latitude,
-        longitude,
-        propertyData: {
-          price: ogData.price,
-          currency: ogData.currency,
-          address,
-          city,
-          postalCode: geocodeData?.postalCode ?? ogData.postalCode,
-          country: geocodeData?.country ?? ogData.country,
-          area: ogData.area,
-          areaUnit: ogData.areaUnit,
-          bedrooms: ogData.bedrooms,
-          bathrooms: ogData.bathrooms,
-        },
+        latitude: geocodeData?.latitude,
+        longitude: geocodeData?.longitude,
       });
       
       setUrl('');
     } catch (err: any) {
       console.error('Error adding property:', err);
       setError(err.message || 'Failed to add property');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -327,14 +285,14 @@ export default function PropertiesScreen() {
               </button>
               <button
                 onClick={handleAddProperty}
-                disabled={isLoading || !url.trim()}
+                disabled={!url.trim()}
                 className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
-                  isLoading || !url.trim()
+                  !url.trim()
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     : 'bg-blue-600 hover:bg-blue-700 text-white'
                 }`}
               >
-                {isLoading ? 'Laddar...' : 'Lägg till'}
+                Lägg till
               </button>
             </div>
             {error && (
@@ -343,11 +301,11 @@ export default function PropertiesScreen() {
           </div>
 
           {/* Loading state */}
-          {isLoading && <LoadingCard />}
+          {isLoadingProperties && properties.length === 0 && <LoadingCard />}
 
           {/* Property List */}
           <div className="space-y-4">
-            {propertyLinks.length === 0 && !isLoading ? (
+            {properties.length === 0 && !isLoadingProperties ? (
               <div className="bg-white rounded-xl shadow-md p-12 text-center">
                 <div className="text-6xl mb-4">🏠</div>
                 <h2 className="text-xl font-semibold text-gray-900 mb-2">
@@ -358,11 +316,11 @@ export default function PropertiesScreen() {
                 </p>
               </div>
             ) : (
-              propertyLinks.map((property) => (
+              properties.map((property) => (
                 <PropertyCard
                   key={property.id}
                   property={property}
-                  onRemove={() => removePropertyLink(property.id)}
+                  onRemove={() => deleteProperty(property.id)}
                 />
               ))
             )}
@@ -406,15 +364,15 @@ export default function PropertiesScreen() {
             />
             <Pressable
               onPress={handleAddProperty}
-              disabled={isLoading || !url.trim()}
+              disabled={!url.trim()}
               className={`py-3 rounded-lg ${
-                isLoading || !url.trim() ? 'bg-gray-300' : 'bg-blue-600'
+                !url.trim() ? 'bg-gray-300' : 'bg-blue-600'
               }`}
             >
               <Text className={`text-center font-semibold ${
-                isLoading || !url.trim() ? 'text-gray-500' : 'text-white'
+                !url.trim() ? 'text-gray-500' : 'text-white'
               }`}>
-                {isLoading ? 'Laddar...' : 'Lägg till'}
+                Lägg till
               </Text>
             </Pressable>
             {error && (
@@ -423,28 +381,28 @@ export default function PropertiesScreen() {
           </View>
 
           {/* Loading state */}
-          {isLoading && <LoadingCard />}
+          {isLoadingProperties && properties.length === 0 && <LoadingCard />}
 
           {/* Property List */}
-          {propertyLinks.length === 0 && !isLoading ? (
+          {properties.length === 0 && !isLoadingProperties ? (
             <View className="bg-white rounded-xl shadow-md p-8 items-center">
               <Text className="text-5xl mb-4">🏠</Text>
               <Text className="text-lg font-semibold text-gray-900 mb-2 text-center">
                 Inga bostäder än
               </Text>
               <Text className="text-gray-600 text-center">
-                Klistra in en länk från Hemnet, Booli eller annan bostadssajt
-              </Text>
-            </View>
-          ) : (
-            propertyLinks.map((property) => (
-              <PropertyCard
-                key={property.id}
-                property={property}
-                onRemove={() => removePropertyLink(property.id)}
-              />
-            ))
-          )}
+              Klistra in en länk från Hemnet, Booli eller annan bostadssajt
+            </Text>
+          </View>
+        ) : (
+          properties.map((property) => (
+            <PropertyCard
+              key={property.id}
+              property={property}
+              onRemove={() => deleteProperty(property.id)}
+            />
+          ))
+        )}
         </View>
       </ScrollView>
     </SafeAreaView>

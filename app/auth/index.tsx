@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../lib/store/authStore';
+import { useAuth } from '../../lib/query/useAuth';
 
 export default function AuthScreen() {
   const [email, setEmail] = useState('');
@@ -9,11 +9,19 @@ export default function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true);
   const router = useRouter();
   
-  const { signIn, signUp, user, isLoading, error, initialize } = useAuthStore();
+  const { 
+    signIn, 
+    signUp, 
+    user, 
+    isLoading, 
+    signInError, 
+    signUpError,
+    isSigningIn,
+    isSigningUp,
+  } = useAuth();
 
-  useEffect(() => {
-    initialize();
-  }, []);
+  const error = isLogin ? signInError : signUpError;
+  const isSubmitting = isSigningIn || isSigningUp;
 
   useEffect(() => {
     if (user) {
@@ -29,9 +37,9 @@ export default function AuthScreen() {
 
     try {
       if (isLogin) {
-        await signIn(email, password);
+        signIn({ email, password });
       } else {
-        await signUp(email, password);
+        signUp({ email, password });
         Alert.alert('Success', 'Check your email for verification link');
       }
     } catch (err) {
@@ -56,7 +64,7 @@ export default function AuthScreen() {
         
         {error && (
           <View className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            <Text className="text-red-700">{error}</Text>
+            <Text className="text-red-700">{error.message || 'An error occurred'}</Text>
           </View>
         )}
 

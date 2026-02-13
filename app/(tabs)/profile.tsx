@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Platform, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../lib/store/authStore';
+import { useAuth } from '../../lib/query/useAuth';
 
 export default function ProfileTab() {
   const [fullName, setFullName] = useState('');
@@ -11,16 +11,9 @@ export default function ProfileTab() {
   
   const { 
     user, 
-    userProfile, 
     signOut, 
-    updateProfile, 
-    isLoading, 
-    initialize 
-  } = useAuthStore();
-
-  useEffect(() => {
-    initialize();
-  }, []);
+    isLoading,
+  } = useAuth();
 
   useEffect(() => {
     if (!user) {
@@ -28,24 +21,14 @@ export default function ProfileTab() {
     }
   }, [user]);
 
-  useEffect(() => {
-    if (userProfile) {
-      setFullName(userProfile.full_name || '');
-    }
-  }, [userProfile]);
-
   const handleUpdateProfile = async () => {
-    if (!userProfile) return;
-    try {
-      await updateProfile({ full_name: fullName });
-    } catch (error) {
-      console.error('Failed to update profile');
-    }
+    // TODO: Implement profile update with Supabase profiles table
+    console.log('Profile update:', { fullName });
   };
 
-  const handleSignOut = async () => {
+  const handleSignOut = () => {
     try {
-      await signOut();
+      signOut();
       router.replace('/auth');
     } catch (error) {
       console.error('Failed to sign out');
