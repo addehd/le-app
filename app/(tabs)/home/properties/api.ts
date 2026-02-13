@@ -116,6 +116,52 @@ export async function fetchOGData(url: string): Promise<OGData> {
   }
 }
 
+/**
+ * Fetch geocoding data for a property listing URL
+ * 
+ * @param url - The property listing URL
+ * @returns Geocoded location data including coordinates and formatted address
+ * 
+ * @example
+ * const data = await fetchGeocodeData('https://www.bjurfors.se/sv/tillsalu/...');
+ * console.log(data.latitude, data.longitude);
+ */
+export async function fetchGeocodeData(url: string): Promise<GeocodeData | null> {
+  const GEOCODE_URL = 'https://qv7xxqjd4d.execute-api.eu-north-1.amazonaws.com/go/geocode-address';
+  
+  try {
+    const response = await fetch(GEOCODE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url }),
+    });
+
+    if (!response.ok) {
+      console.warn(`Geocoding failed with HTTP ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    
+    console.log('Geocode data:', data);
+    
+    return {
+      latitude: data.latitude,
+      longitude: data.longitude,
+      address: data.address,
+      city: data.city,
+      postalCode: data.postalCode || data.postal_code,
+      country: data.country,
+      formattedAddress: data.formattedAddress || data.formatted_address,
+    };
+  } catch (error) {
+    console.warn('Failed to fetch geocode data:', error);
+    return null;
+  }
+}
+
 function extractFallbackData(url: string): OGData {
   try {
     const urlObj = new URL(url);

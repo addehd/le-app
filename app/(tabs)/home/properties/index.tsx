@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { usePropertyLinkStore, PropertyLink } from '../../../../lib/store/propertyLinkStore';
 import { useAuthStore } from '../../../../lib/store/authStore';
-import { fetchOGData } from './api';
+import { fetchOGData, fetchGeocodeData } from './api';
 
 function PropertyCard({ property, onRemove }: { property: PropertyLink; onRemove: () => void }) {
   const router = useRouter();
@@ -209,13 +209,35 @@ export default function PropertiesScreen() {
     setError(null);
 
     try {
-      // Fetch OG data using feature-local API
-      const ogData = await fetchOGData(url);
+      // Fetch OG data and geocoding data in parallel
+      const [ogResult, geocodeResult] = await Promise.allSettled([
+        fetchOGData(url),
+        fetchGeocodeData(url),
+      ]);
 
+      // OG data is critical - throw if it fails
+      if (ogResult.status === 'rejected') {
+        throw new Error('Failed to fetch property data');
+      }
+      const ogData = ogResult.value;
+
+      // Geocode data is optional - just log if it fails
+      const geocodeData = geocodeResult.status === 'fulfilled' ? geocodeResult.value : null;
+      
+      if (geocodeResult.status === 'rejected') {
+        console.warn('Geocoding failed, continuing without location data:', geocodeResult.reason);
+      }
 
       console.log('OG data:', ogData);
+      console.log('Geocode data:', geocodeData);
       
-      // Save to store with fetched data
+      // Merge location data: prefer geocode over OG metadata
+      const latitude = geocodeData?.latitude ?? ogData.latitude;
+      const longitude = geocodeData?.longitude ?? ogData.longitude;
+      const address = geocodeData?.address ?? ogData.address;
+      const city = geocodeData?.city ?? ogData.city;
+      
+      // Save to store with merged data
       const sharedBy = user?.email || 'anon';
       await savePropertyLink({
         url,
@@ -223,11 +245,15 @@ export default function PropertiesScreen() {
         description: ogData.description,
         image: ogData.image,
         sharedBy,
+        latitude,
+        longitude,
         propertyData: {
           price: ogData.price,
           currency: ogData.currency,
-          address: ogData.address,
-          city: ogData.city,
+          address,
+          city,
+          postalCode: geocodeData?.postalCode ?? ogData.postalCode,
+          country: geocodeData?.country ?? ogData.country,
           area: ogData.area,
           areaUnit: ogData.areaUnit,
           bedrooms: ogData.bedrooms,
