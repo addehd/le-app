@@ -1,35 +1,18 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { ScrollView, View, Text, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { usePropertyLinkStore } from '../../lib/store/propertyLinkStore';
-import { useComparisonStore } from '../../lib/store/comparisonStore';
+import { useProperties } from '../../lib/query/useProperties';
+import { useComparison } from '../../lib/query/useComparison';
 import { ComparisonCard } from './_components/ComparisonCard';
 
 export default function CompareScreen() {
   const router = useRouter();
-  const { propertyLinks } = usePropertyLinkStore();
+  const { properties } = useProperties();
   const {
     selectedPropertyIds,
     comparisonData,
-    generateComparison,
-    enableAutoSave,
-    disableAutoSave,
-  } = useComparisonStore();
-
-  useEffect(() => {
-    enableAutoSave();
-    return () => disableAutoSave();
-  }, []);
-
-  useEffect(() => {
-    if (selectedPropertyIds.length > 0) {
-      const selectedProperties = propertyLinks.filter((p) =>
-        selectedPropertyIds.includes(p.id)
-      );
-      generateComparison(selectedProperties);
-    }
-  }, [selectedPropertyIds, propertyLinks]);
+  } = useComparison();
 
   return (
     <SafeAreaView className="flex-1 bg-gray-100">

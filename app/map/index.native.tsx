@@ -1,8 +1,9 @@
 import { View, Text, StyleSheet, ActivityIndicator, Pressable, TextInput, ScrollView } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import { useMapStore, PropertyData, Place } from './mapStore';
+import { useMapPlaces } from '../../lib/query/useMapPlaces';
+import type { PropertyData, Place } from './mapStore';
 
 // Malmö city center coordinates
 const MALMO_CENTER = {
@@ -70,16 +71,12 @@ const MOCK_PROPERTY_DATA: PropertyData = {
 };
 
 export default function MapScreen() {
-  const { places, isLoading, error, fetchPlaces, addProperty } = useMapStore();
+  const { places, isLoading, error, addPlace } = useMapPlaces();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [url, setUrl] = useState('');
   const [isLoadingProperty, setIsLoadingProperty] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Place | null>(null);
   const insets = useSafeAreaInsets();
-
-  useEffect(() => {
-    fetchPlaces();
-  }, []);
 
   const handleSubmit = () => {
     if (!url.trim()) return;
@@ -100,7 +97,7 @@ export default function MapScreen() {
         created_at: new Date().toISOString(),
       };
       
-      addProperty(newProperty);
+      addPlace(newProperty);
       setSelectedProperty(newProperty);
       setIsLoadingProperty(false);
       setUrl('');

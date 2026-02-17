@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { usePropertyLinkStore } from '../../lib/store/propertyLinkStore';
-import { useComparisonStore } from '../../lib/store/comparisonStore';
+import { useProperties } from '../../lib/query/useProperties';
+import { useComparison } from '../../lib/query/useComparison';
 import { ComparisonCard } from './_components/ComparisonCard';
 import { PropertySelector } from './_components/PropertySelector';
 import { SunOrientationView } from './_components/SunOrientationView';
@@ -9,35 +9,16 @@ import { FloorPlanViewer } from './_components/FloorPlanViewer';
 
 export default function CompareScreenWeb() {
   const router = useRouter();
-  const { propertyLinks } = usePropertyLinkStore();
+  const { properties: propertyLinks } = useProperties();
   const {
     selectedPropertyIds,
     comparisonData,
     addPropertyToComparison,
     removePropertyFromComparison,
-    generateComparison,
     saveSession,
-    enableAutoSave,
-    disableAutoSave,
-  } = useComparisonStore();
+  } = useComparison();
 
   const [showSelector, setShowSelector] = useState(false);
-
-  useEffect(() => {
-    // Enable auto-save on mount
-    enableAutoSave();
-    return () => disableAutoSave();
-  }, []);
-
-  useEffect(() => {
-    // Regenerate comparison when selected properties change
-    if (selectedPropertyIds.length > 0) {
-      const selectedProperties = propertyLinks.filter((p) =>
-        selectedPropertyIds.includes(p.id)
-      );
-      generateComparison(selectedProperties);
-    }
-  }, [selectedPropertyIds, propertyLinks]);
 
   const handleToggleProperty = (propertyId: string) => {
     if (selectedPropertyIds.includes(propertyId)) {

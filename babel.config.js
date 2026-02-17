@@ -8,6 +8,17 @@ module.exports = function(api) {
       }],
       'nativewind/babel',
     ],
-    plugins: [],
+    plugins: [
+      [
+        'module-resolver',
+        {
+          root: ['./'],
+          alias: {
+            '@': './'
+          },
+          extensions: ['.ios.js', '.android.js', '.js', '.ts', '.tsx', '.json']
+        }
+      ]
+    ],
   };
 };

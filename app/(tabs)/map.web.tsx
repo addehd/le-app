@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Map, { Marker } from 'react-map-gl/maplibre';
 import { useAuth } from '../../lib/query/useAuth';
-import { usePropertyLinkStore } from '../../lib/store/propertyLinkStore';
+import { useProperties } from '../../lib/query/useProperties';
 import { hasValidCoordinates } from '../../lib/utils/coordinates';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -18,16 +18,11 @@ export default function MapTab() {
 
   const { user } = useAuth();
   const {
-    propertyLinks,
-    addPropertyLink,
-    removePropertyLink,
+    properties: propertyLinks,
+    addProperty: addPropertyLink,
+    deleteProperty: removePropertyLink,
     isLoading: isPropertyLoading,
-    loadFromDatabase
-  } = usePropertyLinkStore();
-
-  useEffect(() => {
-    loadFromDatabase();
-  }, []);
+  } = useProperties();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,7 +33,12 @@ export default function MapTab() {
       const lat = Math.random() * 180 - 90;
       const lng = Math.random() * 360 - 180;
 
-      await addPropertyLink(url, sharedBy, lat, lng);
+      addPropertyLink({
+        url,
+        sharedBy,
+        latitude: lat,
+        longitude: lng,
+      });
       setUrl('');
     } catch (error) {
       console.error('Error adding link:', error);

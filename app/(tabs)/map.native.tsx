@@ -1,8 +1,8 @@
 import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, ActivityIndicator } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useAuth } from '../../lib/query/useAuth';
-import { usePropertyLinkStore } from '../../lib/store/propertyLinkStore';
+import { useProperties } from '../../lib/query/useProperties';
 import { hasValidCoordinates } from '../../lib/utils/coordinates';
 
 // Valle Sagrado, Peru coordinates (Cusco region)
@@ -19,16 +19,11 @@ export default function MapTab() {
 
   const { user } = useAuth();
   const {
-    propertyLinks,
-    addPropertyLink,
-    removePropertyLink,
+    properties: propertyLinks,
+    addProperty: addPropertyLink,
+    deleteProperty: removePropertyLink,
     isLoading,
-    loadFromDatabase
-  } = usePropertyLinkStore();
-
-  useEffect(() => {
-    loadFromDatabase();
-  }, []);
+  } = useProperties();
 
   const handleSubmit = async () => {
     if (!url.trim()) return;
@@ -37,7 +32,12 @@ export default function MapTab() {
       const sharedBy = user?.email || 'anon';
       const lat = Math.random() * 180 - 90;
       const lng = Math.random() * 360 - 180;
-      await addPropertyLink(url, sharedBy, lat, lng);
+      addPropertyLink({
+        url,
+        sharedBy,
+        latitude: lat,
+        longitude: lng,
+      });
       setUrl('');
     } catch (error) {
       console.error('Error adding link:', error);

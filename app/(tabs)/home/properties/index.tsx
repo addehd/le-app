@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { Platform, View, Text, Pressable, ScrollView, TextInput, Image, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { PropertyLink } from '../../../../lib/store/propertyLinkStore';
-import { useProperties } from '../../../../lib/query/useProperties';
-import { usePropertyRealtimeSubscription } from '../../../../lib/query/useRealtimeSubscriptions';
-import { useAuth } from '../../../../lib/query/useAuth';
+import { PropertyLink } from '@/lib/store/propertyLinkStore';
+import { useProperties } from '@/lib/query/useProperties';
+import { usePropertyRealtimeSubscription } from '@/lib/query/useRealtimeSubscriptions';
+import { useAuth } from '@/lib/query/useAuth';
 import { fetchOGData, fetchGeocodeData } from './api';
 
 function PropertyCard({ property, onRemove }: { property: PropertyLink; onRemove: () => void }) {
