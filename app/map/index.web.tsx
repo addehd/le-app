@@ -1,8 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Map, { Marker } from 'react-map-gl/maplibre';
+import type { MapRef } from 'react-map-gl/maplibre';
 import { useAuth } from '../../lib/query/useAuth';
-import { usePropertyLinkStore } from '../../lib/store/propertyLinkStore';
+import { useProperties } from '../../lib/query/useProperties';
+import { usePropertiesTable } from '../../lib/query/usePropertiesTable';
 import { hasValidCoordinates } from '../../lib/utils/coordinates';
+import { PropertyMarker } from './_components/PropertyMarker';
+import { fitMapToMarkers } from './utils/fitMapToMarkers';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 // Valle Sagrado, Peru coordinates (Cusco region)
@@ -13,20 +17,20 @@ const INITIAL_VIEW_STATE = {
 };
 
 export default function MapScreen() {
+  const mapRef = useRef<MapRef>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [url, setUrl] = useState('');
   const { user } = useAuth();
   const {
-    propertyLinks,
-    addPropertyLink,
-    removePropertyLink,
+    properties: propertyLinks,
+    addPropertyAsync,
+    deleteProperty: removePropertyLink,
     isLoading: isPropertyLoading,
-    loadFromDatabase
-  } = usePropertyLinkStore();
-
-  useEffect(() => {
-    loadFromDatabase(); // Load property links from Supabase
-  }, []);
+  } = useProperties();
+  const {
+    properties: propertiesFromTable,
+    isLoading: isPropertiesTableLoading,
+  } = usePropertiesTable();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,8 +41,7 @@ export default function MapScreen() {
       const lat = Math.random() * 180 - 90;
       const lng = Math.random() * 360 - 180;
 
-      // Add property link with property-specific data extraction
-      await addPropertyLink(url, sharedBy, lat, lng);
+      await addPropertyAsync({ url, sharedBy, latitude: lat, longitude: lng });
       setUrl('');
     } catch (error) {
       console.error('Error adding link:', error);
@@ -51,10 +54,18 @@ export default function MapScreen() {
   // Filter links with valid coordinates to prevent type errors
   const validPropertyLinks = propertyLinks.filter(hasValidCoordinates) as Array<typeof propertyLinks[0] & { latitude: number; longitude: number }>;
 
+  // Fit map to show all markers whenever data finishes loading
+  useEffect(() => {
+    if (isPropertiesTableLoading || isPropertyLoading) return;
+    const allMarkers = [...propertiesFromTable, ...validPropertyLinks];
+    fitMapToMarkers(mapRef, allMarkers);
+  }, [isPropertiesTableLoading, isPropertyLoading]);
+
   return (
     <div style={{ width: '100%', height: '100vh', margin: 0, padding: 0, overflow: 'hidden', position: 'relative' }}>
       {/* MapLibre Map */}
       <Map
+        ref={mapRef}
         initialViewState={INITIAL_VIEW_STATE}
         style={{ width: '100%', height: '100%' }}
         mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
@@ -83,7 +94,10 @@ export default function MapScreen() {
           </Marker>
         ))}
 
-        {/* Markers for shared links (green) */}
+        {/* Markers for properties from database table (green with images) */}
+        {propertiesFromTable.map((property) => (
+          <PropertyMarker key={`property-table-${property.id}`} property={property} />
+        ))}
       </Map>
 
       {/* Add Property Button */}
