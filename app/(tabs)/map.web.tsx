@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Map, { Marker } from 'react-map-gl/maplibre';
+import type { MapRef } from 'react-map-gl/maplibre';
 import { useAuth } from '../../lib/query/useAuth';
 import { useProperties } from '../../lib/query/useProperties';
+import { usePropertiesTable } from '../../lib/query/usePropertiesTable';
 import { hasValidCoordinates } from '../../lib/utils/coordinates';
+import { PropertyMarker } from './_components/PropertyMarker';
+import { fitMapToMarkers } from './utils/fitMapToMarkers';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 // Valle Sagrado, Peru coordinates (Cusco region)
@@ -12,17 +16,21 @@ const INITIAL_VIEW_STATE = {
   zoom: 12
 };
 
-export default function MapTab() {
+export default function MapScreen() {
+  const mapRef = useRef<MapRef>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [url, setUrl] = useState('');
-
   const { user } = useAuth();
   const {
     properties: propertyLinks,
-    addProperty: addPropertyLink,
+    addPropertyAsync,
     deleteProperty: removePropertyLink,
     isLoading: isPropertyLoading,
   } = useProperties();
+  const {
+    properties: propertiesFromTable,
+    isLoading: isPropertiesTableLoading,
+  } = usePropertiesTable();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,12 +41,7 @@ export default function MapTab() {
       const lat = Math.random() * 180 - 90;
       const lng = Math.random() * 360 - 180;
 
-      addPropertyLink({
-        url,
-        sharedBy,
-        latitude: lat,
-        longitude: lng,
-      });
+      await addPropertyAsync({ url, sharedBy, latitude: lat, longitude: lng });
       setUrl('');
     } catch (error) {
       console.error('Error adding link:', error);
@@ -48,25 +51,21 @@ export default function MapTab() {
   const isLoading = isPropertyLoading;
   const currentLinks = propertyLinks;
 
-  // Filter links with valid coordinates to prevent NaN errors
-  const validPropertyLinks = propertyLinks.filter(link => {
-    const isValid = hasValidCoordinates(link);
-    if (!isValid) {
-      console.warn('⚠️ Property link missing valid coordinates:', {
-        id: link.id,
-        url: link.url,
-        latitude: link.latitude,
-        longitude: link.longitude,
-      });
-    }
-    return isValid;
-  });
+  // Filter links with valid coordinates to prevent type errors
+  const validPropertyLinks = propertyLinks.filter(hasValidCoordinates) as Array<typeof propertyLinks[0] & { latitude: number; longitude: number }>;
 
+  // Fit map to show all markers whenever data finishes loading
+  useEffect(() => {
+    if (isPropertiesTableLoading || isPropertyLoading) return;
+    const allMarkers = [...propertiesFromTable, ...validPropertyLinks];
+    fitMapToMarkers(mapRef, allMarkers);
+  }, [isPropertiesTableLoading, isPropertyLoading]);
 
   return (
-    <div style={{ width: '100%', height: '100%', margin: 0, padding: 0, overflow: 'hidden', position: 'relative' }}>
+    <div style={{ width: '100%', height: '100vh', margin: 0, padding: 0, overflow: 'hidden', position: 'relative' }}>
       {/* MapLibre Map */}
       <Map
+        ref={mapRef}
         initialViewState={INITIAL_VIEW_STATE}
         style={{ width: '100%', height: '100%' }}
         mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
@@ -95,6 +94,10 @@ export default function MapTab() {
           </Marker>
         ))}
 
+        {/* Markers for properties from database table (green with images) */}
+        {propertiesFromTable.map((property) => (
+          <PropertyMarker key={`property-table-${property.id}`} property={property} />
+        ))}
       </Map>
 
       {/* Add Property Button */}
@@ -132,7 +135,7 @@ export default function MapTab() {
             borderTopRightRadius: '16px',
             boxShadow: '0 -4px 12px rgba(0, 0, 0, 0.15)',
             padding: '24px',
-            maxHeight: '50vh',
+            maxHeight: '70vh',
             overflowY: 'auto',
             zIndex: 999,
           }}
@@ -178,6 +181,7 @@ export default function MapTab() {
             </div>
           </form>
 
+          {/* Optional Sign-In Info */}
           {!user && (
             <div style={{
               backgroundColor: '#eff6ff',
@@ -192,6 +196,7 @@ export default function MapTab() {
             </div>
           )}
 
+          {/* Loading State */}
           {isLoading && (
             <div style={{ textAlign: 'center', padding: '40px' }}>
               <div
@@ -209,11 +214,17 @@ export default function MapTab() {
                 Fetching link data...
               </p>
               <style>
-                {`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}
+                {`
+                  @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                  }
+                `}
               </style>
             </div>
           )}
 
+          {/* Links Display */}
           {!isLoading && (
             <div>
               <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: '700', color: '#1f2937' }}>
@@ -221,52 +232,146 @@ export default function MapTab() {
               </h3>
 
               {currentLinks.length === 0 ? (
-                <div style={{ backgroundColor: '#f9fafb', padding: '40px', borderRadius: '12px', textAlign: 'center' }}>
+                <div style={{
+                  backgroundColor: '#f9fafb',
+                  padding: '40px',
+                  borderRadius: '12px',
+                  textAlign: 'center'
+                }}>
                   <p style={{ margin: 0, color: '#6b7280' }}>
                     No property links added yet
                   </p>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '300px', overflowY: 'auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {currentLinks.map((link) => {
-                    const hasCoords = hasValidCoordinates(link);
+                    const isPropertyLink = 'propertyData' in link;
+                    const propertyData = isPropertyLink ? (link as any).propertyData : null;
+
                     return (
-                      <div
-                        key={link.id}
-                        style={{
-                          backgroundColor: '#f9fafb',
-                          padding: '12px',
-                          borderRadius: '8px',
-                          border: `1px solid ${hasCoords ? '#e5e7eb' : '#fbbf24'}`,
-                          opacity: hasCoords ? 1 : 0.7,
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                          <div style={{ flex: 1 }}>
-                            <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '600' }}>
-                              {link.title || 'Link'}
-                              {!hasCoords && (
-                                <span style={{ color: '#f59e0b', marginLeft: '8px', fontSize: '12px' }}>
-                                  ⚠ No location
-                                </span>
-                              )}
-                            </h4>
-                            <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>{link.url}</p>
+                      <div key={link.id} style={{
+                        backgroundColor: '#f9fafb',
+                        padding: '16px',
+                        borderRadius: '8px',
+                        border: '1px solid #e5e7eb'
+                      }}>
+                        <div style={{ display: 'flex', gap: '12px', marginBottom: '8px' }}>
+                          {link.image && (
+                            <img
+                              src={link.image}
+                              alt={link.title || 'Property image'}
+                              style={{
+                                width: '120px',
+                                height: '80px',
+                                objectFit: 'cover',
+                                borderRadius: '6px',
+                                flexShrink: 0
+                              }}
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '4px' }}>
+                              <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#1f2937' }}>
+                                {link.title || 'Property Link'}
+                              </h4>
+                              <button
+                                onClick={() => removePropertyLink(link.id)}
+                                style={{
+                                  backgroundColor: '#ef4444',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  padding: '4px 8px',
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                  marginLeft: '12px',
+                                  flexShrink: 0
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+
+                            {/* Property-specific metadata */}
+                            {isPropertyLink && propertyData && (
+                              <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(2, 1fr)',
+                                gap: '6px',
+                                marginBottom: '8px',
+                                padding: '8px',
+                                backgroundColor: '#eff6ff',
+                                borderRadius: '4px',
+                                fontSize: '12px'
+                              }}>
+                                {propertyData.price && (
+                                  <div>
+                                    <strong>Price:</strong> {propertyData.price.toLocaleString()} {propertyData.currency || 'SEK'}
+                                  </div>
+                                )}
+                                {propertyData.bedrooms && (
+                                  <div>
+                                    <strong>Bedrooms:</strong> {propertyData.bedrooms}
+                                  </div>
+                                )}
+                                {propertyData.bathrooms && (
+                                  <div>
+                                    <strong>Bathrooms:</strong> {propertyData.bathrooms}
+                                  </div>
+                                )}
+                                {propertyData.area && (
+                                  <div>
+                                    <strong>Area:</strong> {propertyData.area} {propertyData.areaUnit || 'm²'}
+                                  </div>
+                                )}
+                                {propertyData.propertyType && (
+                                  <div>
+                                    <strong>Type:</strong> {propertyData.propertyType}
+                                  </div>
+                                )}
+                                {propertyData.address && (
+                                  <div style={{ gridColumn: '1 / -1' }}>
+                                    <strong>Address:</strong> {propertyData.address}
+                                  </div>
+                                )}
+                                {propertyData.energyClass && (
+                                  <div>
+                                    <strong>Energy:</strong> {propertyData.energyClass}
+                                  </div>
+                                )}
+                                {propertyData.builtYear && (
+                                  <div>
+                                    <strong>Built:</strong> {propertyData.builtYear}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#6b7280' }}>
+                              {link.description}
+                            </p>
+                            <a
+                              href={link.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                fontSize: '12px',
+                                color: '#3b82f6',
+                                textDecoration: 'none',
+                                wordBreak: 'break-all'
+                              }}
+                            >
+                              {link.url}
+                            </a>
                           </div>
-                          <button
-                            onClick={() => removePropertyLink(link.id)}
-                            style={{
-                              backgroundColor: '#ef4444',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '4px',
-                              padding: '4px 8px',
-                              fontSize: '12px',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Remove
-                          </button>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#9ca3af' }}>
+                          <span>Shared by: {link.sharedBy}</span>
+                          <span>{new Date(link.sharedAt).toLocaleDateString()}</span>
                         </div>
                       </div>
                     );
